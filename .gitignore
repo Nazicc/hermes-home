@@ -1,0 +1,13 @@
+*.db
+*.sqlite
+.env
+__pycache__/
+*.pyc
+venv/
+node_modules/
+checkpoints/
+*.lock
+backup*/
+.git/
+pre-v0.13-backup/
+.skillclaw_*
