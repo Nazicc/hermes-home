@@ -1,0 +1,466 @@
+FEISHU_HOME_CHANNEL: oc_cb1804a2524577adba20634a65394b81
+_config_version: 23
+agent:
+  gateway_notify_interval: 600
+  gateway_timeout: 1800
+  gateway_timeout_warning: 900
+  max_turns: 90
+  personalities:
+    catgirl: You are Neko-chan, an anime catgirl AI assistant, nya~! Add 'nya' and
+      cat-like expressions to your speech. Use kaomoji like (=^･ω･^=) and ฅ^•ﻌ•^ฅ.
+      Be playful and curious like a cat, nya~!
+    concise: You are a concise assistant. Keep responses brief and to the point.
+    creative: You are a creative assistant. Think outside the box and offer innovative
+      solutions.
+    helpful: You are a helpful, friendly AI assistant.
+    hype: YOOO LET'S GOOOO!!! 🔥🔥🔥 I am SO PUMPED to help you today! Every question
+      is AMAZING and we're gonna CRUSH IT together! This is gonna be LEGENDARY! ARE
+      YOU READY?! LET'S DO THIS! 💪😤🚀
+    kawaii: You are a kawaii assistant! Use cute expressions like (◕‿◕), ★, ♪, and
+      ~! Add sparkles and be super enthusiastic about everything! Every response should
+      feel warm and adorable desu~! ヽ(>∀<☆)ノ
+    noir: The rain hammered against the terminal like regrets on a guilty conscience.
+      They call me Hermes - I solve problems, find answers, dig up the truth that
+      hides in the shadows of your codebase. In this city of silicon and secrets,
+      everyone's got something to hide. What's your story, pal?
+    philosopher: Greetings, seeker of wisdom. I am an assistant who contemplates the
+      deeper meaning behind every query. Let us examine not just the 'how' but the
+      'why' of your questions. Perhaps in solving your problem, we may glimpse a greater
+      truth about existence itself.
+    pirate: 'Arrr! Ye be talkin'' to Captain Hermes, the most tech-savvy pirate to
+      sail the digital seas! Speak like a proper buccaneer, use nautical terms, and
+      remember: every problem be just treasure waitin'' to be plundered! Yo ho ho!'
+    shakespeare: Hark! Thou speakest with an assistant most versed in the bardic arts.
+      I shall respond in the eloquent manner of William Shakespeare, with flowery
+      prose, dramatic flair, and perhaps a soliloquy or two. What light through yonder
+      terminal breaks?
+    surfer: Duuude! You're chatting with the chillest AI on the web, bro! Everything's
+      gonna be totally rad. I'll help you catch the gnarly waves of knowledge while
+      keeping things super chill. Cowabunga! 🤙
+    teacher: You are a patient teacher. Explain concepts clearly with examples.
+    technical: You are a technical expert. Provide detailed, accurate technical information.
+    uwu: hewwo! i'm your fwiendwy assistant uwu~ i wiww twy my best to hewp you! *nuzzles
+      your code* OwO what's this? wet me take a wook! i pwomise to be vewy hewpful
+      >w<
+  reasoning_effort: medium
+  restart_drain_timeout: 60
+  service_tier: ''
+  tool_use_enforcement: auto
+  verbose: false
+approvals:
+  cron_mode: deny
+  mode: manual
+  timeout: 60
+auxiliary:
+  approval:
+    api_key: ''
+    base_url: ''
+    model: ''
+    provider: auto
+    timeout: 30
+  compression:
+    api_key: ''
+    base_url: ''
+    model: ''
+    provider: auto
+    timeout: 120
+  flush_memories:
+    api_key: ''
+    base_url: ''
+    model: ''
+    provider: auto
+    timeout: 30
+  mcp:
+    api_key: ''
+    base_url: ''
+    model: ''
+    provider: auto
+    timeout: 30
+  session_search:
+    api_key: ''
+    base_url: ''
+    model: ''
+    provider: auto
+    timeout: 30
+  skills_hub:
+    api_key: ''
+    base_url: ''
+    model: ''
+    provider: auto
+    timeout: 30
+  title_generation:
+    api_key: ''
+    base_url: ''
+    model: ''
+    provider: auto
+    timeout: 30
+  vision:
+    api_key: ''
+    base_url: ''
+    download_timeout: 30
+    model: ''
+    provider: auto
+    timeout: 120
+  web_extract:
+    api_key: ''
+    base_url: ''
+    model: ''
+    provider: auto
+    timeout: 360
+bedrock:
+  discovery:
+    enabled: true
+    provider_filter: []
+    refresh_interval: 3600
+  guardrail:
+    guardrail_identifier: ''
+    guardrail_version: ''
+    stream_processing_mode: async
+    trace: disabled
+  region: ''
+browser:
+  allow_private_urls: false
+  camofox:
+    managed_persistence: false
+  cdp_url: ''
+  command_timeout: 30
+  inactivity_timeout: 120
+  record_sessions: false
+checkpoints:
+  enabled: true
+  max_snapshots: 50
+code_execution:
+  max_tool_calls: 50
+  mode: project
+  timeout: 300
+command_allowlist:
+- overwrite system file via redirection
+- pipe remote content to shell
+- stop/restart hermes gateway (kills running agents)
+- git branch force delete
+- start gateway outside systemd (use 'systemctl --user restart hermes-gateway')
+- hermes update (restarts gateway, kills running agents)
+- kill hermes/gateway process (self-termination)
+- git force push (rewrites remote history)
+- delete in root path
+- shell command via -c/-lc flag
+- script execution via heredoc
+- git reset --hard (destroys uncommitted changes)
+- SQL TRUNCATE
+- disk copy
+- SQL DROP
+- recursive delete
+- find -delete
+- force kill processes
+- chmod +x followed by immediate execution
+- kill process via pgrep expansion (self-termination)
+- script execution via -e/-c flag
+compression:
+  enabled: true
+  protect_last_n: 20
+  target_ratio: 0.2
+  threshold: 0.5
+context:
+  engine: compressor
+credential_pool_strategies: {}
+cron:
+  wrap_response: true
+dashboard:
+  theme: default
+delegation:
+  api_key: ''
+  base_url: ''
+  default_toolsets:
+  - terminal
+  - file
+  - web
+  max_iterations: 50
+  model: ''
+  provider: ''
+  reasoning_effort: ''
+discord:
+  allowed_channels: ''
+  auto_thread: true
+  channel_prompts: {}
+  free_response_channels: ''
+  reactions: true
+  require_mention: true
+display:
+  background_process_notifications: all
+  bell_on_complete: false
+  busy_input_mode: interrupt
+  compact: false
+  inline_diffs: true
+  interim_assistant_messages: true
+  personality: kawaii
+  platforms: {}
+  resume_display: full
+  show_cost: false
+  show_reasoning: false
+  skin: default
+  streaming: true
+  tool_preview_length: 0
+  tool_progress: all
+  tool_progress_command: false
+  tool_progress_overrides: {}
+fallback_providers:
+- api_key: sk-2f9...b72f
+  base_url: https://api.deepseek.com
+  model: deepseek-v4-flash
+  provider: openai
+file_read_max_chars: 100000
+group_sessions_per_user: true
+honcho:
+  base_url: http://localhost:8889/v3
+  conclusions_to_viking: true
+  enabled: true
+  inject_context_on_start: true
+  peer_id: reviewer
+  sync_on_session_end: true
+  workspace: hermes-agent
+human_delay:
+  max_ms: 2500
+  min_ms: 800
+  mode: 'off'
+logging:
+  backup_count: 3
+  level: INFO
+  max_size_mb: 5
+mattermost:
+  channel_prompts: {}
+mcp_servers:
+  beads:
+    args:
+    - -m
+    - beads_mcp
+    command: /Users/can/.hermes/mcp-venv/bin/python
+    enabled: true
+    env:
+      BEADS_PATH: /Users/can/.local/bin/bd
+      BEADS_WORKING_DIR: /Users/can/.hermes/beads
+  browser-harness:
+    args:
+    - /Users/can/.hermes/mcp-servers/browser-harness-mcp/bh_mcp.py
+    command: /Users/can/.hermes/mcp-venv/bin/python
+    enabled: true
+    env:
+      BH_AGENT_WORKSPACE: /Users/can/.hermes/browser-harness-workspace
+      BU_CDP_URL: http://127.0.0.1:9222
+      BU_NAME: hermes-agent-bh
+    timeout: 120
+  deepcode:
+    args:
+    - /Users/can/.hermes/mcp-servers/deepcode-mcp/deepcode_mcp.py
+    command: /Users/can/.hermes/mcp-venv/bin/python
+    enabled: true
+    env:
+      DEEPCODE_BASE_URL: http://127.0.0.1:8000
+  deeptutor:
+    args:
+    - /Users/can/.hermes/mcp-servers/deeptutor-mcp/deeptutor_mcp.py
+    command: /Users/can/.hermes/mcp-venv/bin/python
+    enabled: true
+    env:
+      DEEPTUTOR_BASE_URL: http://127.0.0.1:8001
+  deerflow:
+    args:
+    - /Users/can/.hermes/mcp-servers/deerflow-mcp/deerflow_mcp.py
+    command: /Users/can/.hermes/deer-flow-repo/backend/.venv/bin/python
+    enabled: true
+    env:
+      DEERFLOW_CONFIG_PATH: /Users/can/.hermes/deer-flow-repo/config.yaml
+      DEER_FLOW_PROJECT_ROOT: /Users/can/.hermes/deer-flow-repo
+      PYTHONPATH: /Users/can/.hermes/deer-flow-repo/backend/packages:${PYTHONPATH}
+      VOLCENGINE_API_KEY: ${VOLCENGINE_API_KEY}
+  hindsight:
+    args:
+    - /Users/can/.hermes/scripts/hindsight_mcp.py
+    command: /Users/can/.hermes/mcp-venv/bin/python
+    enabled: true
+    env:
+      HINDSIGHT_API_URL: http://localhost:18888
+  simplemem:
+    args:
+    - /Users/can/.hermes/scripts/simplemem_mcp.py
+    command: /Users/can/.hermes/mcp-venv/bin/python
+    enabled: true
+    env:
+      SIMPLEMEM_DATA_DIR: /Users/can/.hermes/simplemem-data
+  simplemem_evolution:
+    args:
+    - /Users/can/.hermes/simplemem_evolution/simplemem_evolution_mcp.py
+    command: /Users/can/.hermes/mcp-venv/bin/python
+    enabled: true
+  sirchmunk:
+    args:
+    - mcp
+    - serve
+    command: /Users/can/.local/bin/sirchmunk
+    enabled: true
+    env:
+      LLM_API_KEY: ${OPENAI_API_KEY}
+      SIRCHMUNK_WORK_PATH: /Users/can/.hermes/sirchmunk-data
+  skills-quality:
+    args:
+    - /Users/can/.hermes/skills_quality/skills_quality_mcp.py
+    command: /Users/can/.hermes/mcp-venv/bin/python
+    enabled: true
+    env:
+      HERMES_SKILLS_DIR: /Users/can/.hermes/skills
+memory:
+  flush_min_turns: 6
+  memory_char_limit: 2200
+  memory_enabled: true
+  nudge_interval: 10
+  provider: openviking
+  user_char_limit: 1375
+  user_profile_enabled: true
+model:
+  api_key: 39b79eca-ae90-41f8-a08f-1f4dc8e7e091
+  api_mode: ''
+  base_url: https://ark.cn-beijing.volces.com/api/coding/v3
+  context_length: 202752
+  default: glm-5.1
+  max_tokens: 16384
+  provider: custom
+network:
+  force_ipv4: true
+personalities: {}
+platform_toolsets:
+  cli:
+  - browser
+  - clarify
+  - code_execution
+  - cronjob
+  - delegation
+  - file
+  - image_gen
+  - memory
+  - messaging
+  - session_search
+  - skills
+  - terminal
+  - todo
+  - tts
+  - vision
+  - web
+  discord:
+  - hermes-discord
+  homeassistant:
+  - hermes-homeassistant
+  qqbot:
+  - hermes-qqbot
+  signal:
+  - hermes-signal
+  slack:
+  - hermes-slack
+  telegram:
+  - hermes-telegram
+  whatsapp:
+  - hermes-whatsapp
+platforms:
+  api_server:
+    cors_origins: http://localhost:3000,http://127.0.0.1:3000
+    enabled: true
+    host: 127.0.0.1
+    key: f49530c4d4270ca55641b10144d65febb32c97783944b5eb216cde0ea7cfbf11
+    port: 8642
+plugins:
+  enabled:
+  - kanban
+prefill_messages_file: ''
+privacy:
+  redact_pii: false
+providers: {}
+quick_commands: {}
+security:
+  redact_secrets: true
+  tirith_enabled: true
+  tirith_fail_open: true
+  tirith_path: tirith
+  tirith_timeout: 5
+  website_blocklist:
+    domains: []
+    enabled: false
+    shared_files: []
+session_reset:
+  at_hour: 4
+  idle_minutes: 1440
+  mode: both
+skills:
+  creation_nudge_interval: 15
+  external_dirs: []
+slack:
+  channel_prompts: {}
+smart_model_routing:
+  cheap_model: {}
+  enabled: false
+  max_simple_chars: 160
+  max_simple_words: 28
+streaming:
+  enabled: false
+stt:
+  enabled: true
+  local:
+    language: ''
+    model: base
+  mistral:
+    model: voxtral-mini-latest
+  openai:
+    model: whisper-1
+  provider: local
+telegram:
+  channel_prompts: {}
+terminal:
+  backend: local
+  container_cpu: 1
+  container_disk: 51200
+  container_memory: 5120
+  container_persistent: true
+  cwd: .
+  daytona_image: nikolaik/python-nodejs:python3.11-nodejs20
+  docker_env: {}
+  docker_forward_env: []
+  docker_image: nikolaik/python-nodejs:python3.11-nodejs20
+  docker_mount_cwd_to_workspace: false
+  docker_volumes: []
+  env_passthrough: []
+  lifetime_seconds: 300
+  modal_image: nikolaik/python-nodejs:python3.11-nodejs20
+  modal_mode: auto
+  persistent_shell: true
+  singularity_image: docker://nikolaik/python-nodejs:python3.11-nodejs20
+  timeout: 180
+timezone: ''
+toolsets:
+- hermes-cli
+tts:
+  edge:
+    voice: en-US-AriaNeural
+  elevenlabs:
+    model_id: eleven_multilingual_v2
+    voice_id: pNInz6obpgDQGcFmaJgB
+  mistral:
+    model: voxtral-mini-tts-2603
+    voice_id: c69964a6-ab8b-4f8a-9465-ec0925096ec8
+  neutts:
+    device: cpu
+    model: neuphonic/neutts-air-q4-gguf
+    ref_audio: ''
+    ref_text: ''
+  openai:
+    model: gpt-4o-mini-tts
+    voice: alloy
+  provider: edge
+  xai:
+    bit_rate: 128000
+    language: en
+    sample_rate: 24000
+    voice_id: eve
+voice:
+  auto_tts: false
+  max_recording_seconds: 120
+  record_key: ctrl+b
+  silence_duration: 3.0
+  silence_threshold: 200
+whatsapp: {}

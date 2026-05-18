@@ -1,0 +1,24 @@
+_config_version: 23
+agent:
+  max_turns: 90
+  tool_use_enforcement: auto
+fallback_providers:
+- api_key: sk-2f9...b72f
+  base_url: https://api.deepseek.com
+  model: deepseek-v4-flash
+  provider: openai
+memory:
+  memory_enabled: true
+  provider: openviking
+model:
+  api_key: 39b79eca-ae90-41f8-a08f-1f4dc8e7e091
+  base_url: https://ark.cn-beijing.volces.com/api/coding/v3
+  context_length: 202752
+  default: glm-5.1
+  max_tokens: 16384
+  provider: custom
+plugins:
+  enabled:
+  - kanban
+toolsets:
+- hermes-cli

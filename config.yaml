@@ -1,12 +1,17 @@
 model:
-  default: "glm-5.1"
-  provider: "custom"
-  base_url: "https://ark.cn-beijing.volces.com/api/coding/v3"
-  api_key: 39b79eca-ae90-41f8-a08f-1f4dc8e7e091
+  api_key: REDACTED-DEEPSEEK
   api_mode: ''
+  base_url: https://api.deepseek.com
+  context_length: 131072
+  default: deepseek-v4-flash
   max_tokens: 16384
+  provider: custom
 providers: {}
-fallback_providers: []
+fallback_providers:
+- api_key: sk-2f9...b72f
+  base_url: https://api.deepseek.com
+  model: deepseek-v4-flash
+  provider: openai
 credential_pool_strategies: {}
 toolsets:
 - hermes-cli
@@ -14,10 +19,15 @@ agent:
   max_turns: 90
   gateway_timeout: 1800
   restart_drain_timeout: 60
+  api_max_retries: 3
   service_tier: ''
   tool_use_enforcement: auto
   gateway_timeout_warning: 900
+  clarify_timeout: 600
   gateway_notify_interval: 600
+  gateway_auto_continue_freshness: 3600
+  image_input_mode: auto
+  disabled_toolsets: []
   personalities:
     catgirl: "You are Neko-chan, an anime catgirl AI assistant, nya~! Add 'nya' and\
       \ cat-like expressions to your speech. Use kaomoji like (=^\uFF65\u03C9\uFF65\
@@ -66,37 +76,82 @@ terminal:
   cwd: .
   timeout: 180
   env_passthrough: []
+  shell_init_files: []
+  auto_source_bashrc: true
   docker_image: nikolaik/python-nodejs:python3.11-nodejs20
   docker_forward_env: []
   docker_env: {}
   singularity_image: docker://nikolaik/python-nodejs:python3.11-nodejs20
   modal_image: nikolaik/python-nodejs:python3.11-nodejs20
   daytona_image: nikolaik/python-nodejs:python3.11-nodejs20
+  vercel_runtime: node24
   container_cpu: 1
   container_memory: 5120
   container_disk: 51200
   container_persistent: true
   docker_volumes: []
   docker_mount_cwd_to_workspace: false
+  docker_extra_args: []
+  docker_run_as_host_user: false
   persistent_shell: true
   lifetime_seconds: 300
+web:
+  backend: ''
+  search_backend: ''
+  extract_backend: ''
 browser:
   inactivity_timeout: 120
   command_timeout: 30
   record_sessions: false
   allow_private_urls: false
+  engine: auto
+  auto_local_for_private_urls: true
   cdp_url: ''
+  dialog_policy: must_respond
+  dialog_timeout_s: 300
   camofox:
     managed_persistence: false
+    user_id: ''
+    session_key: ''
+    adopt_existing_tab: false
 checkpoints:
   enabled: true
   max_snapshots: 50
+  max_total_size_mb: 500
+  max_file_size_mb: 10
+  auto_prune: true
+  retention_days: 7
+  delete_orphans: true
+  min_interval_hours: 24
 file_read_max_chars: 100000
+tool_output:
+  max_bytes: 50000
+  max_lines: 2000
+  max_line_length: 2000
+tool_loop_guardrails:
+  warnings_enabled: true
+  hard_stop_enabled: false
+  warn_after:
+    exact_failure: 2
+    same_tool_failure: 3
+    idempotent_no_progress: 2
+  hard_stop_after:
+    exact_failure: 5
+    same_tool_failure: 8
+    idempotent_no_progress: 5
 compression:
   enabled: true
-  threshold: 0.5
-  target_ratio: 0.2
-  protect_last_n: 20
+  threshold: 0.35
+  target_ratio: 0.15
+  protect_last_n: 10
+  hygiene_hard_message_limit: 150
+  protect_first_n: 3
+prompt_caching:
+  cache_ttl: 5m
+openrouter:
+  response_cache: true
+  response_cache_ttl: 300
+  min_coding_score: 0.65
 bedrock:
   region: ''
   discovery:
@@ -108,11 +163,6 @@ bedrock:
     guardrail_version: ''
     stream_processing_mode: async
     trace: disabled
-smart_model_routing:
-  enabled: false
-  max_simple_chars: 160
-  max_simple_words: 28
-  cheap_model: {}
 auxiliary:
   vision:
     provider: auto
@@ -120,6 +170,7 @@ auxiliary:
     base_url: ''
     api_key: ''
     timeout: 120
+    extra_body: {}
     download_timeout: 30
   web_extract:
     provider: auto
@@ -127,68 +178,110 @@ auxiliary:
     base_url: ''
     api_key: ''
     timeout: 360
+    extra_body: {}
   compression:
     provider: auto
     model: ''
     base_url: ''
     api_key: ''
     timeout: 120
+    extra_body: {}
   session_search:
     provider: auto
     model: ''
     base_url: ''
     api_key: ''
     timeout: 30
+    extra_body: {}
+    max_concurrency: 3
   skills_hub:
     provider: auto
     model: ''
     base_url: ''
     api_key: ''
     timeout: 30
+    extra_body: {}
   approval:
     provider: auto
     model: ''
     base_url: ''
     api_key: ''
     timeout: 30
+    extra_body: {}
   mcp:
     provider: auto
     model: ''
     base_url: ''
     api_key: ''
     timeout: 30
-  flush_memories:
-    provider: auto
-    model: ''
-    base_url: ''
-    api_key: ''
-    timeout: 30
+    extra_body: {}
   title_generation:
     provider: auto
     model: ''
     base_url: ''
     api_key: ''
     timeout: 30
+    extra_body: {}
+  triage_specifier:
+    provider: auto
+    model: ''
+    base_url: ''
+    api_key: ''
+    timeout: 120
+    extra_body: {}
+  curator:
+    provider: auto
+    model: ''
+    base_url: ''
+    api_key: ''
+    timeout: 600
+    extra_body: {}
+  flush_memories:
+    api_key: ''
+    base_url: ''
+    model: ''
+    provider: auto
+    timeout: 30
 display:
   compact: false
   personality: kawaii
   resume_display: full
   busy_input_mode: interrupt
+  tui_auto_resume_recent: false
   bell_on_complete: false
   show_reasoning: false
   streaming: true
+  timestamps: false
+  final_response_markdown: strip
+  persistent_output: true
+  persistent_output_max_lines: 200
   inline_diffs: true
+  file_mutation_verifier: true
   show_cost: false
   skin: default
+  language: en
+  tui_status_indicator: kaomoji
+  user_message_preview:
+    first_lines: 2
+    last_lines: 2
   interim_assistant_messages: true
   tool_progress_command: false
   tool_progress_overrides: {}
   tool_preview_length: 0
+  ephemeral_system_ttl: 0
   platforms: {}
+  runtime_footer:
+    enabled: false
+    fields:
+    - model
+    - context_pct
+    - cwd
+  copy_shortcut: auto
   background_process_notifications: all
   tool_progress: all
 dashboard:
   theme: default
+  show_token_analytics: false
 privacy:
   redact_pii: false
 tts:
@@ -214,6 +307,8 @@ tts:
     ref_text: ''
     model: neuphonic/neutts-air-q4-gguf
     device: cpu
+  piper:
+    voice: en_US-lessac-medium
 stt:
   enabled: true
   provider: local
@@ -228,6 +323,7 @@ voice:
   record_key: ctrl+b
   max_recording_seconds: 120
   auto_tts: false
+  beep_enabled: true
   silence_threshold: 200
   silence_duration: 3.0
 human_delay:
@@ -249,68 +345,110 @@ delegation:
   provider: ''
   base_url: ''
   api_key: ''
+  inherit_mcp_toolsets: true
   max_iterations: 50
+  child_timeout_seconds: 600
   reasoning_effort: ''
+  max_concurrent_children: 3
+  max_spawn_depth: 1
+  orchestrator_enabled: true
+  subagent_auto_approve: false
   default_toolsets:
   - terminal
   - file
   - web
 prefill_messages_file: ''
+goals:
+  max_turns: 20
 skills:
   external_dirs: []
+  template_vars: true
+  inline_shell: false
+  inline_shell_timeout: 10
+  guard_agent_created: false
   creation_nudge_interval: 15
-honcho:
+curator:
   enabled: true
+  interval_hours: 168
+  min_idle_hours: 2
+  stale_after_days: 30
+  archive_after_days: 90
+  backup:
+    enabled: true
+    keep: 5
+honcho:
   base_url: http://localhost:8889/v3
-  workspace: hermes-agent
+  conclusions_to_viking: true
+  enabled: true
+  inject_context_on_start: true
   peer_id: r00tcc
   sync_on_session_end: true
-  inject_context_on_start: true
-  conclusions_to_viking: true
+  workspace: hermes-agent
 timezone: ''
+slack:
+  require_mention: true
+  free_response_channels: ''
+  allowed_channels: ''
+  channel_prompts: {}
 discord:
   require_mention: true
   free_response_channels: ''
   allowed_channels: ''
   auto_thread: true
+  thread_require_mention: false
   reactions: true
   channel_prompts: {}
+  dm_role_auth_guild: ''
+  server_actions: ''
 whatsapp: {}
 telegram:
+  reactions: false
   channel_prompts: {}
-slack:
-  channel_prompts: {}
+  allowed_chats: ''
 mattermost:
+  require_mention: true
+  free_response_channels: ''
+  allowed_channels: ''
   channel_prompts: {}
+matrix:
+  require_mention: true
+  free_response_rooms: ''
+  allowed_rooms: ''
 approvals:
   mode: manual
   timeout: 60
   cron_mode: deny
+  mcp_reload_confirm: true
+  destructive_slash_confirm: true
 command_allowlist:
-- overwrite system file via redirection
-- pipe remote content to shell
 - stop/restart hermes gateway (kills running agents)
-- git branch force delete
-- start gateway outside systemd (use 'systemctl --user restart hermes-gateway')
-- hermes update (restarts gateway, kills running agents)
-- kill hermes/gateway process (self-termination)
-- git force push (rewrites remote history)
-- delete in root path
-- shell command via -c/-lc flag
-- script execution via heredoc
-- git reset --hard (destroys uncommitted changes)
 - SQL TRUNCATE
-- disk copy
+- chmod +x followed by immediate execution
+- start gateway outside systemd (use 'systemctl --user restart hermes-gateway')
 - SQL DROP
+- kill hermes/gateway process (self-termination)
+- sudo with privilege flag (stdin/askpass/shell/list)
+- script execution via -e/-c flag
+- hermes update (restarts gateway, kills running agents)
+- overwrite system file via redirection
+- shell command via -c/-lc flag
+- git force push (rewrites remote history)
 - recursive delete
+- kill process via pgrep expansion (self-termination)
+- git branch force delete
+- pipe remote content to shell
+- delete in root path
+- git reset --hard (destroys uncommitted changes)
+- disk copy
 - find -delete
 - force kill processes
-- chmod +x followed by immediate execution
-- kill process via pgrep expansion (self-termination)
-- script execution via -e/-c flag
+- script execution via heredoc
 quick_commands: {}
+hooks: {}
+hooks_auto_accept: false
 personalities: {}
 security:
+  allow_private_urls: false
   redact_secrets: true
   tirith_enabled: true
   tirith_path: tirith
@@ -320,8 +458,15 @@ security:
     enabled: false
     domains: []
     shared_files: []
+  acked_advisories: []
+  allow_lazy_installs: true
 cron:
   wrap_response: true
+  max_parallel_jobs: null
+kanban:
+  dispatch_in_gateway: true
+  dispatch_interval_seconds: 60
+  failure_limit: 2
 code_execution:
   mode: project
   max_tool_calls: 50
@@ -330,11 +475,112 @@ logging:
   level: INFO
   max_size_mb: 5
   backup_count: 3
+model_catalog:
+  enabled: true
+  url: https://hermes-agent.nousresearch.com/docs/api/model-catalog.json
+  ttl_hours: 24
+  providers: {}
 network:
   force_ipv4: true
-_config_version: 19
+sessions:
+  auto_prune: false
+  retention_days: 90
+  vacuum_after_prune: true
+  min_interval_hours: 24
+onboarding:
+  seen:
+    busy_input_prompt: true
+updates:
+  pre_update_backup: false
+  backup_keep: 5
+lsp:
+  enabled: true
+  wait_mode: document
+  wait_timeout: 5.0
+  install_strategy: auto
+  servers: {}
+_config_version: 23
 FEISHU_HOME_CHANNEL: oc_cb1804a2524577adba20634a65394b81
 group_sessions_per_user: true
+mcp_servers:
+  beads:
+    args:
+    - -m
+    - beads_mcp
+    command: /Users/can/.hermes/mcp-venv/bin/python
+    enabled: true
+    env:
+      BEADS_PATH: /Users/can/.local/bin/bd
+      BEADS_WORKING_DIR: /Users/can/.hermes/beads
+  browser-harness:
+    args:
+    - /Users/can/.hermes/mcp-servers/browser-harness-mcp/bh_mcp.py
+    command: /Users/can/.hermes/mcp-venv/bin/python
+    enabled: true
+    env:
+      BH_AGENT_WORKSPACE: /Users/can/.hermes/browser-harness-workspace
+      BU_CDP_URL: http://127.0.0.1:9222
+      BU_NAME: hermes-agent-bh
+    timeout: 120
+  deepcode:
+    args:
+    - /Users/can/.hermes/mcp-servers/deepcode-mcp/deepcode_mcp.py
+    command: /Users/can/.hermes/mcp-venv/bin/python
+    enabled: true
+    env:
+      DEEPCODE_BASE_URL: http://127.0.0.1:8000
+  deeptutor:
+    args:
+    - /Users/can/.hermes/mcp-servers/deeptutor-mcp/deeptutor_mcp.py
+    command: /Users/can/.hermes/mcp-venv/bin/python
+    enabled: true
+    env:
+      DEEPTUTOR_BASE_URL: http://127.0.0.1:8001
+  deerflow:
+    args:
+    - /Users/can/.hermes/mcp-servers/deerflow-mcp/deerflow_mcp.py
+    command: /Users/can/.hermes/deer-flow-repo/backend/.venv/bin/python
+    enabled: true
+    env:
+      DEERFLOW_CONFIG_PATH: /Users/can/.hermes/deer-flow-repo/config.yaml
+      DEER_FLOW_PROJECT_ROOT: /Users/can/.hermes/deer-flow-repo
+      PYTHONPATH: /Users/can/.hermes/deer-flow-repo/backend/packages:${PYTHONPATH}
+      VOLCENGINE_API_KEY: ${VOLCENGINE_API_KEY}
+  hindsight:
+    args:
+    - /Users/can/.hermes/scripts/hindsight_mcp.py
+    command: /Users/can/.hermes/mcp-venv/bin/python
+    enabled: true
+    env:
+      HINDSIGHT_API_URL: http://localhost:18888
+  simplemem:
+    args:
+    - /Users/can/.hermes/scripts/simplemem_mcp.py
+    command: /Users/can/.hermes/mcp-venv/bin/python
+    enabled: true
+    env:
+      SIMPLEMEM_DATA_DIR: /Users/can/.hermes/simplemem-data
+  simplemem_evolution:
+    args:
+    - /Users/can/.hermes/simplemem_evolution/simplemem_evolution_mcp.py
+    command: /Users/can/.hermes/mcp-venv/bin/python
+    enabled: true
+  sirchmunk:
+    args:
+    - mcp
+    - serve
+    command: /Users/can/.local/bin/sirchmunk
+    enabled: true
+    env:
+      LLM_API_KEY: ${OPENAI_API_KEY}
+      SIRCHMUNK_WORK_PATH: /Users/can/.hermes/sirchmunk-data
+  skills-quality:
+    args:
+    - /Users/can/.hermes/skills_quality/skills_quality_mcp.py
+    command: /Users/can/.hermes/mcp-venv/bin/python
+    enabled: true
+    env:
+      HERMES_SKILLS_DIR: /Users/can/.hermes/skills
 platform_toolsets:
   cli:
   - browser
@@ -344,6 +590,7 @@ platform_toolsets:
   - delegation
   - file
   - image_gen
+  - kanban
   - memory
   - messaging
   - session_search
@@ -353,6 +600,9 @@ platform_toolsets:
   - tts
   - vision
   - web
+  feishu:
+  - hermes-feishu
+  - kanban
   discord:
   - hermes-discord
   homeassistant:
@@ -367,98 +617,27 @@ platform_toolsets:
   - hermes-telegram
   whatsapp:
   - hermes-whatsapp
+platforms:
+  api_server:
+    cors_origins: http://localhost:3000,http://127.0.0.1:3000
+    enabled: true
+    host: 127.0.0.1
+    key: f49530c4d4270ca55641b10144d65febb32c97783944b5eb216cde0ea7cfbf11
+    port: 8642
 session_reset:
   at_hour: 4
   idle_minutes: 1440
   mode: both
+smart_model_routing:
+  cheap_model: {}
+  enabled: false
+  max_simple_chars: 160
+  max_simple_words: 28
 streaming:
   enabled: false
-mcp_servers:
-  sirchmunk:
-    enabled: true
-    command: /Users/can/.local/bin/sirchmunk
-    args:
-    - mcp
-    - serve
-    env:
-      SIRCHMUNK_WORK_PATH: /Users/can/.hermes/sirchmunk-data
-      LLM_API_KEY: ${OPENAI_API_KEY}
-  simplemem:
-    enabled: true
-    command: /Users/can/.hermes/mcp-venv/bin/python
-    args:
-    - /Users/can/.hermes/scripts/simplemem_mcp.py
-    env:
-      SIMPLEMEM_DATA_DIR: /Users/can/.hermes/simplemem-data
-  simplemem_evolution:
-    enabled: true
-    command: /Users/can/.hermes/mcp-venv/bin/python
-    args:
-    - /Users/can/.hermes/simplemem_evolution/simplemem_evolution_mcp.py
-  skills-quality:
-    enabled: true
-    command: /Users/can/.hermes/mcp-venv/bin/python
-    args:
-    - /Users/can/.hermes/skills_quality/skills_quality_mcp.py
-    env:
-      HERMES_SKILLS_DIR: /Users/can/.hermes/skills
-  deerflow:
-    enabled: true
-    command: /Users/can/.hermes/deer-flow-repo/backend/.venv/bin/python
-    args:
-    - /Users/can/.hermes/mcp-servers/deerflow-mcp/deerflow_mcp.py
-    env:
-      DEER_FLOW_PROJECT_ROOT: /Users/can/.hermes/deer-flow-repo
-      DEERFLOW_CONFIG_PATH: /Users/can/.hermes/deer-flow-repo/config.yaml
-      PYTHONPATH: /Users/can/.hermes/deer-flow-repo/backend/packages:${PYTHONPATH}
-      VOLCENGINE_API_KEY: ${VOLCENGINE_API_KEY}
-  beads:
-    enabled: true
-    command: /Users/can/.hermes/mcp-venv/bin/python
-    args:
-    - -m
-    - beads_mcp
-    env:
-      BEADS_PATH: /Users/can/.local/bin/bd
-      BEADS_WORKING_DIR: /Users/can/.hermes/beads
-  deepcode:
-    enabled: true
-    command: /Users/can/.hermes/mcp-venv/bin/python
-    args:
-    - /Users/can/.hermes/mcp-servers/deepcode-mcp/deepcode_mcp.py
-    env:
-      DEEPCODE_BASE_URL: http://127.0.0.1:8000
-  deeptutor:
-    enabled: true
-    command: /Users/can/.hermes/mcp-venv/bin/python
-    args:
-    - /Users/can/.hermes/mcp-servers/deeptutor-mcp/deeptutor_mcp.py
-    env:
-      DEEPTUTOR_BASE_URL: http://127.0.0.1:8001
-  hindsight:
-    enabled: true
-    command: /Users/can/.hermes/mcp-venv/bin/python
-    args:
-    - /Users/can/.hermes/scripts/hindsight_mcp.py
-    env:
-      HINDSIGHT_API_URL: http://localhost:18888
-  browser-harness:
-    enabled: true
-    timeout: 120
-    command: /Users/can/.hermes/mcp-venv/bin/python
-    args:
-    - /Users/can/.hermes/mcp-servers/browser-harness-mcp/bh_mcp.py
-    env:
-      BU_CDP_URL: http://127.0.0.1:9222
-      BH_AGENT_WORKSPACE: /Users/can/.hermes/browser-harness-workspace
-      BU_NAME: hermes-agent-bh
-platforms:
-  api_server:
-    enabled: true
-    host: 127.0.0.1
-    port: 8642
-    key: f49530c4d4270ca55641b10144d65febb32c97783944b5eb216cde0ea7cfbf11
-    cors_origins: http://localhost:3000,http://127.0.0.1:3000
+plugins:
+  enabled:
+  - kanban
 
 # ── Fallback Model ────────────────────────────────────────────────────
 # Automatic provider failover when primary is unavailable.
@@ -472,22 +651,12 @@ platforms:
 #   zai          (ZAI_API_KEY)         — Z.AI / GLM
 #   kimi-coding  (KIMI_API_KEY)        — Kimi / Moonshot
 #   kimi-coding-cn (KIMI_CN_API_KEY)   — Kimi / Moonshot (China)
+#   minimax      (MINIMAX_API_KEY)     — MiniMax
+#   minimax-cn   (MINIMAX_CN_API_KEY)  — MiniMax (China)
+#   bedrock      (AWS IAM / boto3)     — AWS Bedrock (Converse API)
 #
 # For custom OpenAI-compatible endpoints, add base_url and key_env.
 #
 # fallback_model:
 #   provider: openrouter
 #   model: anthropic/claude-sonnet-4
-#
-# ── Smart Model Routing ────────────────────────────────────────────────
-# Optional cheap-vs-strong routing for simple turns.
-# Keeps the primary model for complex work, but can route short/simple
-# messages to a cheaper model across providers.
-#
-# smart_model_routing:
-#   enabled: true
-#   max_simple_chars: 160
-#   max_simple_words: 28
-#   cheap_model:
-#     provider: openrouter
-#     model: google/gemini-2.5-flash
