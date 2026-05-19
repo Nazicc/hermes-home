@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hermes.block-pg</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/sbin/pfctl</string>
+        <string>-a</string>
+        <string>hermes/block-pg</string>
+        <string>-f</string>
+        <string>/Users/can/.hermes/security/pf-block-pg.conf</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+    <key>StandardErrorPath</key>
+    <string>/Users/can/.hermes/logs/pf-block-pg.err</string>
+    <key>StandardOutPath</key>
+    <string>/Users/can/.hermes/logs/pf-block-pg.log</string>
+</dict>
+</plist>

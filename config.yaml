@@ -16,7 +16,7 @@ credential_pool_strategies: {}
 toolsets:
 - hermes-cli
 agent:
-  max_turns: 90
+  max_turns: 40
   gateway_timeout: 1800
   restart_drain_timeout: 60
   api_max_retries: 3
@@ -27,7 +27,8 @@ agent:
   gateway_notify_interval: 600
   gateway_auto_continue_freshness: 3600
   image_input_mode: auto
-  disabled_toolsets: []
+  disabled_toolsets:
+  - mcp-codegraph
   personalities:
     catgirl: "You are Neko-chan, an anime catgirl AI assistant, nya~! Add 'nya' and\
       \ cat-like expressions to your speech. Use kaomoji like (=^\uFF65\u03C9\uFF65\
@@ -141,10 +142,10 @@ tool_loop_guardrails:
     idempotent_no_progress: 5
 compression:
   enabled: true
-  threshold: 0.35
+  threshold: 0.4
   target_ratio: 0.15
-  protect_last_n: 10
-  hygiene_hard_message_limit: 150
+  protect_last_n: 8
+  hygiene_hard_message_limit: 100
   protect_first_n: 3
 prompt_caching:
   cache_ttl: 5m
@@ -325,9 +326,9 @@ voice:
   auto_tts: false
   beep_enabled: true
   silence_threshold: 200
-  silence_duration: 3.0
+  silence_duration: 3
 human_delay:
-  mode: 'off'
+  mode: false
   min_ms: 800
   max_ms: 2500
 context:
@@ -421,28 +422,29 @@ approvals:
   mcp_reload_confirm: true
   destructive_slash_confirm: true
 command_allowlist:
-- stop/restart hermes gateway (kills running agents)
-- SQL TRUNCATE
-- chmod +x followed by immediate execution
-- start gateway outside systemd (use 'systemctl --user restart hermes-gateway')
+- shell command via -c/-lc flag
+- pipe remote content to shell
 - SQL DROP
-- kill hermes/gateway process (self-termination)
+- hermes update (restarts gateway, kills running agents)
+- stop/restart hermes gateway (kills running agents)
+- overwrite project env/config via redirection
+- git branch force delete
+- disk copy
+- git reset --hard (destroys uncommitted changes)
 - sudo with privilege flag (stdin/askpass/shell/list)
 - script execution via -e/-c flag
-- hermes update (restarts gateway, kills running agents)
-- overwrite system file via redirection
-- shell command via -c/-lc flag
-- git force push (rewrites remote history)
+- chmod +x followed by immediate execution
+- force kill processes
+- kill hermes/gateway process (self-termination)
+- find -delete
+- delete in root path
 - recursive delete
 - kill process via pgrep expansion (self-termination)
-- git branch force delete
-- pipe remote content to shell
-- delete in root path
-- git reset --hard (destroys uncommitted changes)
-- disk copy
-- find -delete
-- force kill processes
+- overwrite system file via redirection
+- start gateway outside systemd (use 'systemctl --user restart hermes-gateway')
 - script execution via heredoc
+- git force push (rewrites remote history)
+- SQL TRUNCATE
 quick_commands: {}
 hooks: {}
 hooks_auto_accept: false
@@ -496,7 +498,7 @@ updates:
 lsp:
   enabled: true
   wait_mode: document
-  wait_timeout: 5.0
+  wait_timeout: 5
   install_strategy: auto
   servers: {}
 _config_version: 23
@@ -574,6 +576,14 @@ mcp_servers:
     env:
       LLM_API_KEY: ${OPENAI_API_KEY}
       SIRCHMUNK_WORK_PATH: /Users/can/.hermes/sirchmunk-data
+  codegraph:
+    args:
+    - serve
+    - --mcp
+    - --path
+    - /Users/can/.hermes/hermes-agent
+    command: /Users/can/.npm-global/bin/codegraph
+    enabled: true
   skills-quality:
     args:
     - /Users/can/.hermes/skills_quality/skills_quality_mcp.py
@@ -638,6 +648,7 @@ streaming:
 plugins:
   enabled:
   - kanban
+  - orca-status
 
 # ── Fallback Model ────────────────────────────────────────────────────
 # Automatic provider failover when primary is unavailable.

@@ -2,12 +2,9 @@
 name: skills-evolution-from-research
 description: "Evaluate and integrate external open-source projects into Hermes Agent skills. Use when analyzing GitHub repos for potential skill improvements, or when upgrading skill standards based on external research, or when auditing existing local skills for stub quality, outdated information, or missing trigger/anti_trigger fields. NOT for: trivial one-off tasks, skills that are already well-developed and tested, when you lack environment context to validate the integration, or when the external project has no relevant overlap with existing Hermes capabilities."
 category: general
-version: 2.1.0
-...
+version: 2.2.0
 author: Hermes Agent
-...
 license: MIT
-...
 ---
 
 ## Skill Evolution Protocol
@@ -46,12 +43,12 @@ When using `git` on skills:
 - The skills repo is standalone; hermes-agent repo does NOT track skills/
 - Skills are committed/pushed separately from hermes-agent code
 
-bash
+```bash
 cd ~/.hermes/skills
 git add skills/[name]/SKILL.md
 git commit -m "feat(skills): add/evolve [name]"
 git push origin main
-
+```
 
 ---
 
@@ -64,51 +61,51 @@ Before integrating external research, audit existing local skills to identify ga
 Before touching any file, verify:
 
 1. **Identify the correct git repo** — `~/.hermes/skills/` is often a NESTED git repo. Check with:
-   bash
+   ```bash
    ls ~/.hermes/skills/.git  # if exists, skills/ is a separate repo
    git -C ~/.hermes/hermes-agent rev-parse --is-inside-work-tree
-   
+   ```
    - If `skills/` has its own `.git/`, commit changes THERE, not in hermes-agent
    - If `skills/` has NO `.git/`, it may be part of hermes-agent's tree or untracked
 
 2. **Check current git status** in the correct repo before starting:
-   bash
+   ```bash
    cd ~/.hermes/skills && git status --short | head -10
    cd ~/.hermes/hermes-agent && git status --short | head -10
-   
+   ```
 
 3. **List all modified/new SKILL.md files** before committing — avoid accidentally adding unrelated changes.
 
 4. **For SKILL.md patches**: Read the exact current description line BEFORE patching:
-   bash
+   ```bash
    head -5 skills/<name>/SKILL.md  # get exact current description
-   
+   ```
 
 ### Audit Commands
 
 **Priority 1 — Stub skills (only frontmatter, no actual content):**
-bash
+```bash
 find ~/.hermes/skills -name "SKILL.md" -not -path "*/.backup*" | xargs wc -l | sort -n | head -30
-
+```
 Stubs are typically 8-31 lines (mostly frontmatter, no body content).
 
 **Priority 2 — Missing trigger/anti_trigger patterns:**
-bash
+```bash
 find ~/.hermes/skills -name "SKILL.md" | while read f; do
   if ! head -5 "$f" | grep -q '"Use when'; then
     echo "$f"
   fi
 done
-
+```
 
 **Priority 3 — Missing NOT for clause:**
-bash
+```bash
 find ~/.hermes/skills -name "SKILL.md" | while read f; do
   if ! head -10 "$f" | grep -qi 'NOT for'; then
     echo "$f"
   fi
 done
-
+```
 
 ---
 
@@ -124,9 +121,9 @@ done
 
 **CRITICAL: Verify external repo existence before referencing in skills**
 
-bash
+```bash
 git ls-remote https://github.com/[owner]/[repo].git 2>/dev/null | head -1
-
+```
 
 If the repo doesn't exist, do NOT reference it in skills. Common false references found in audits:
 - "claude-mem's mem-search skill (65k stars)" — CLAUDE-MEM DOES NOT EXIST ON GITHUB
@@ -152,11 +149,11 @@ For each candidate external project:
 
 ### 2.4 GEPA Automated Evaluation (Best Effort)
 
-bash
+```bash
 cd /Users/can/.hermes/hermes-agent/hermes-agent-self-evolution
 export OPENAI_API_KEY=...  # Required for DSPy judge
 ./venv/bin/python3 -m evolution.skills.evolve_skill --skill <name> --dry-run
-
+```
 
 If `venv` is missing or DSPy import fails → skip to Phase 3 (manual evolution). Do NOT try to create the venv or install DSPy.
 
@@ -183,7 +180,7 @@ If `venv` is missing or DSPy import fails → skip to Phase 3 (manual evolution)
 
 **Every skill must have this exact description format:**
 
-yaml
+```yaml
 description: "Use when [specific trigger situation]. [What it does]. NOT for: [explicit exclusion cases]."
 trigger:
   - "trigger phrase 1"
@@ -191,10 +188,10 @@ trigger:
 anti_trigger:
   - "exclusion phrase 1"
   - "exclusion phrase 2"
-
+```
 
 **Example:**
-yaml
+```yaml
 description: "Use when debugging Python crashes or unexpected behavior. 4-phase root cause investigation. NOT for: syntax errors, simple one-liners, or when you already know the fix."
 trigger:
   - "debug"
@@ -203,7 +200,7 @@ trigger:
 anti_trigger:
   - "syntax error"
   - "simple"
-
+```
 
 The description MUST:
 1. Start with `"Use when..."` (not "Use for", not action verb)
@@ -255,7 +252,7 @@ The description MUST:
 ### 3.4 Git Repository Structure (CRITICAL)
 
 Before committing skill changes, check if the skills directory is itself a git repository:
-bash
+```bash
 # Check if skills/ is a nested git repo
 if [ -d "$SKILLS_DIR/.git" ]; then
   echo "skills/ is a git repo — commit there separately"
@@ -266,20 +263,20 @@ if [ -d "$SKILLS_DIR/.git" ]; then
 else
   echo "skills/ is not a git repo — parent repo commit"
 fi
-
+```
 
 If you encounter `fatal: adding embedded git repository`, use:
-bash
+```bash
 git rm --cached -f <path-to-embedded-repo>
-
+```
 
 ### 3.5 Patch Tool Protocol (CRITICAL)
 
 The patch tool requires EXACT string matching. Always read the file first to get the exact current description:
-bash
+```bash
 read_file(path="$SKILL_PATH", limit=5)  # Get exact current frontmatter
 patch(path="$SKILL_PATH", old_string="<exact string>", new_string="<new string>")
-
+```
 
 Never guess the old_string. Always read first.
 
@@ -322,12 +319,12 @@ After integration, validate:
 ### 4.2 Handling Git Divergence
 
 If `git pull` reports divergence or deleted files on remote:
-bash
+```bash
 git stash                    # save local changes
 git pull --rebase origin main  # pull remote changes
 git stash pop                # restore local changes
 git push origin main         # push merged result
-
+```
 
 This preserves local work while accepting the remote's history rewrite.
 
@@ -353,10 +350,10 @@ Re-evaluate a skill when:
 ### Handling Embedded Git Repos
 
 If `git add <directory>` warns about "adding embedded git repository":
-bash
+```bash
 git rm --cached -f <directory>   # remove from index
 git status                        # verify clean
-
+```
 
 The directory is a nested git repo. Work within that directory separately using `cd <directory> && git ...`.
 
@@ -364,10 +361,10 @@ The directory is a nested git repo. Work within that directory separately using 
 
 ## Session Sync (Evolver Bridge)
 
-bash
+```bash
 cd /Users/can/.hermes/hermes-agent
 ./scripts/hermes_to_evolver_bridge.py --max-sessions 50
-
+```
 
 Syncs sessions from `~/.openclaw/agents/hermes-agent/sessions/` to the evolver's session store. Run at end of each self-evolution session.
 
@@ -402,7 +399,7 @@ See: `~/.hermes/scripts/simplemem_mcp.py` for the AMP-typed memory implementatio
 
 A well-formed skill SKILL.md has:
 
-yaml
+```yaml
 ---
 name: <skill-name>
 description: |
@@ -415,7 +412,7 @@ anti_trigger:
   - "deactivation phrase 1"
   - "deactivation phrase 2"
 ---
-
+```
 
 ## Section 1: Core Guidance
 
@@ -443,6 +440,10 @@ After evolution, document:
 - **Git commit hash**: so the change is traceable
 
 ---
+
+## References
+
+- `references/paper-framework-figure-studio-pro.md` — Custom GPT Skill 参考架构分析（c-narcissus/paper-framework-figure-studio-pro v3.0.9）。覆盖：S0-S9 状态驱动工作流、7 种设计模式(Facade/Registry/Command/Memento/Strategy/Adapter/Pipeline)、矢量优先设计哲学、架构治理。加载此文件获取外部 skill 工程的成熟参考范式。
 
 ## Related Skills
 

@@ -1,0 +1,2 @@
+{"id": "msg_70b95696acd54eab8f8dd69891b8d308", "role": "user", "role_id": "default", "parts": [{"type": "text", "text": "你是谁？用一句话回答"}], "created_at": "2026-05-12T10:08:07.863596+00:00"}
+{"id": "msg_36e0625878564ad585a5c0e3d16b87ff", "role": "assistant", "role_id": "hermes", "parts": [{"type": "text", "text": "我是 Hermes Agent Team 的 Coder，专职代码实现与工程落地。"}], "created_at": "2026-05-12T10:08:07.880952+00:00"}

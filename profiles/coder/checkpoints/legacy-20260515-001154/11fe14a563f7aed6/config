@@ -1,0 +1,15 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+	worktree = /private/tmp
+	ignorecase = true
+	precomposeunicode = true
+[user]
+	email = hermes@local
+	name = Hermes Checkpoint
+[commit]
+	gpgsign = false
+[tag]
+	gpgSign = false

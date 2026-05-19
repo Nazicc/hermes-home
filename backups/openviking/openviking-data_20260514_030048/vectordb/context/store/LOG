@@ -1,0 +1,6 @@
+2026/05/11-23:24:52.643053 0x1f30c1e80 Creating DB /Users/can/.hermes/openviking-data/vectordb/context/store since it was missing.
+2026/05/11-23:24:52.657571 0x1f30c1e80 Recovering log #6
+2026/05/11-23:24:52.658573 0x1f30c1e80 Level-0 table #3: started
+2026/05/11-23:24:52.664225 0x1f30c1e80 Level-0 table #3: 216958 bytes OK
+2026/05/11-23:24:52.677043 0x1f30c1e80 Delete type=0 #6
+2026/05/11-23:24:52.677053 0x1f30c1e80 Delete type=3 #1

@@ -1,0 +1,2 @@
+{"id": "msg_5c3e20df90be4d26ba98dea30fa7aaef", "role": "user", "role_id": "default", "parts": [{"type": "text", "text": "say OK"}], "created_at": "2026-05-12T08:20:38.378134+00:00"}
+{"id": "msg_a9c9f573481f4a058b95d9793f08ef0c", "role": "assistant", "role_id": "hermes", "parts": [{"type": "text", "text": "Operation interrupted: waiting for model response (2.5s elapsed)."}], "created_at": "2026-05-12T08:20:38.401602+00:00"}

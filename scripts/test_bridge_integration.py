@@ -10,7 +10,7 @@ from pathlib import Path
 
 HERMES_BRIDGE = Path.home() / ".hermes/hermes-agent/scripts/hermes_to_evolver_bridge.py"
 OUTPUT_DIR = Path.home() / ".openclaw/agents/hermes-agent/sessions"
-RTK_METRICS = Path.home() / ".hermes/hermes-agent/evolver/assets/gep/rtk_metrics.jsonl"
+RTK_METRICS = Path.home() / ".hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/rtk_metrics.jsonl"
 AGENT_NAME = "hermes-agent"
 
 

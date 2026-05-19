@@ -1,0 +1,6 @@
+{
+  "namespace": {
+    "isolate_user_scope_by_agent": false,
+    "isolate_agent_scope_by_user": false
+  }
+}

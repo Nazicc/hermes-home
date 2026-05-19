@@ -1,0 +1,4 @@
+name: tdb-persona
+description: "On session start, recall TDB-AM persona/context and write to persona file for agent injection"
+events:
+  - session:start

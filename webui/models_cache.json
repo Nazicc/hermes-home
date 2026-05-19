@@ -1,0 +1,103 @@
+{
+  "_schema_version": 3,
+  "_source_fingerprint": {
+    "config_yaml": {
+      "path": "/Users/can/.hermes/config.yaml",
+      "mtime_ns": 1779114454286942988,
+      "size": 16131
+    },
+    "auth_json": {
+      "path": "/Users/can/.hermes/auth.json",
+      "missing": true
+    },
+    "catalog": {
+      "provider_catalog_sha256": "adc6a9613e5efcf6a3b83a90bb1aaa57fec4226734f12260226c1ab13f5450e8",
+      "codex_models_cache": {
+        "path": "/Users/can/.codex/models_cache.json",
+        "missing": true
+      }
+    }
+  },
+  "active_provider": "custom",
+  "default_model": "deepseek-v4-flash",
+  "configured_model_badges": {
+    "deepseek-v4-flash": {
+      "role": "fallback",
+      "label": "Fallback 1",
+      "provider": "openai"
+    },
+    "custom/deepseek-v4-flash": {
+      "role": "primary",
+      "label": "Primary",
+      "provider": "custom"
+    },
+    "@custom:deepseek-v4-flash": {
+      "role": "primary",
+      "label": "Primary",
+      "provider": "custom"
+    },
+    "openai/deepseek-v4-flash": {
+      "role": "fallback",
+      "label": "Fallback 1",
+      "provider": "openai"
+    },
+    "@openai:deepseek-v4-flash": {
+      "role": "fallback",
+      "label": "Fallback 1",
+      "provider": "openai"
+    }
+  },
+  "groups": [
+    {
+      "provider": "Custom",
+      "provider_id": "custom",
+      "models": [
+        {
+          "id": "deepseek-v4-flash",
+          "label": "deepseek-v4-flash"
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "label": "deepseek-v4-pro"
+        }
+      ]
+    },
+    {
+      "provider": "DeepSeek",
+      "provider_id": "deepseek",
+      "models": [
+        {
+          "id": "@deepseek:deepseek-v4-flash",
+          "label": "Deepseek V4 Flash"
+        },
+        {
+          "id": "@deepseek:deepseek-v4-pro",
+          "label": "Deepseek V4 PRO"
+        }
+      ]
+    },
+    {
+      "provider": "MiniMax (China)",
+      "provider_id": "minimax-cn",
+      "models": [
+        {
+          "id": "@minimax-cn:MiniMax-M2.7",
+          "label": "Minimax M2.7"
+        },
+        {
+          "id": "@minimax-cn:MiniMax-M2.5",
+          "label": "Minimax M2.5"
+        },
+        {
+          "id": "@minimax-cn:MiniMax-M2.1",
+          "label": "Minimax M2.1"
+        },
+        {
+          "id": "@minimax-cn:MiniMax-M2",
+          "label": "Minimax M2"
+        }
+      ]
+    }
+  ],
+  "_webui_version": "v0.51.89"
+}

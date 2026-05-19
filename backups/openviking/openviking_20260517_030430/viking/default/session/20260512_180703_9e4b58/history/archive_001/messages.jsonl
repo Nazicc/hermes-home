@@ -1,0 +1,2 @@
+{"id": "msg_282fb1e799664ccf9aa870773efc8a68", "role": "user", "role_id": "default", "parts": [{"type": "text", "text": "你是谁？用一句话回答你的角色"}], "created_at": "2026-05-12T10:07:12.630928+00:00"}
+{"id": "msg_e6523213414b464d8a9aa2a717fa8560", "role": "assistant", "role_id": "hermes", "parts": [{"type": "text", "text": "我是 Hermes Agent Team 的 Reviewer，专职代码审查与质量保障——跑测试、读 diff、分级问题、给结论，只审查不修改。"}], "created_at": "2026-05-12T10:07:12.687816+00:00"}

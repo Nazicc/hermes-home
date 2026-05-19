@@ -86,6 +86,52 @@ vault/
 
 Daily notes follow `${VAULT}/_daily/YYYY-MM-DD.md` or `${VAULT}/daily/YYYY-MM-DD.md`.
 
+## S — Sync (Hermes → Obsidian)
+
+When the user asks to sync Hermes knowledge into Obsidian (session history, skills, memories, configs, cron logs, knowledge base):
+
+**Script**: `~/.hermes/scripts/sync-to-obsidian.py` (Python, uses rsync under the hood)
+
+**Vault target**: `_hermes/` subdirectory in the vault root — keeps Hermes data separate from user notes.
+
+**Data sources synced**:
+| Source | Path | Description |
+|--------|------|-------------|
+| Sessions | `sessions/` | 619+ JSONL files (~159M) |
+| Skills | `skills/` | 175+ SKILL.md organized by category (~63M) |
+| Memories | `memories/` | MEMORY.md, USER.md, Hindsight profile |
+| Knowledge base | `knowledge-base/` | OpenViking KB (~1059 files) |
+| Cron logs | `cron/` | Cron job output directories |
+| Config | `config/` | config.yaml + profiles (~7K files) |
+
+**Vault entry notes**:
+- `_hermes/index.md` — root index with stats and directory map (auto-updated)
+- `Hermes 知识库.md` at vault root — quick-link entry (auto-created)
+
+**Setup pattern**:
+1. Create vault directory skeleton: `_hermes/` with 6 subdirs + index.md
+2. Create sync script at `~/.hermes/scripts/sync-to-obsidian.py`
+3. Run it once for initial full sync
+4. Schedule daily cron: `cronjob action=create name=hermes-obsidian-sync schedule="0 5 * * *" script=sync-to-obsidian.py no_agent=True`
+
+**Cron mode**: Use `no_agent=True` — the script handles everything. No LLM tokens consumed on each run.
+
+**Script anatomy**:
+- Uses `rsync -a --delete` for efficient bulk copy
+- Handles 6 independent data sources in sequence
+- Generates `index.md` with current stats (file counts, sizes, sync time)
+- Creates vault root entry note `Hermes 知识库.md` with `[[_hermes/index]]` links
+- Quiet on success (~10s for 10K files), loud on failure
+- Tries Hindsight MCP API for memory snapshot if service is running
+
+**Pitfalls**:
+- Vault path contains spaces — always quote: `"${VAULT}"`
+- `rsync` must be installed (macOS has it pre-installed)
+- Script path must be under `~/.hermes/scripts/` for cron `no_agent=True` mode (bare filename, no absolute path)
+- Large session dir (~159M, 619 files) is the heaviest sync — first run takes ~10s, subsequent rsync runs are nearly instant (only changed files)
+- Hindsight MCP snapshot requires the hindsight Docker container running; silent skip if not
+- Cron delivery: `no_agent=True` omits LLM, so stdout = message. The script's output lines are sent verbatim — keep them clean and informative.
+
 ## Environment Quirks
 
 - **Obsidian URIs**: `obsidian://` URLs can open vaults, notes, and search from CLI:

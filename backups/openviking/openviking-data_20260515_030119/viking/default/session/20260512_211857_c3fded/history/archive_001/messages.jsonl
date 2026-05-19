@@ -1,0 +1,2 @@
+{"id": "msg_1cc04f6f927a491f931abccddf050ad7", "role": "user", "role_id": "default", "parts": [{"type": "text", "text": "回复OK"}], "created_at": "2026-05-12T13:19:06.432237+00:00"}
+{"id": "msg_1f446f8c097244729718abc990bd2ab0", "role": "assistant", "role_id": "hermes", "parts": [{"type": "text", "text": "OK"}], "created_at": "2026-05-12T13:19:06.459932+00:00"}

@@ -14,6 +14,8 @@ hermes-agent/
 │   └── run.py              # Gateway HTTP server
 ├── agent/
 │   └── skill_commands.py   # /skill-name command routing
+│   ├── tool_result.py      # ★ CMA-inspired: structured ToolResult dataclass (status, duration, error, metadata)
+│   └── session_event_log.py# ★ CMA-inspired: append-only JSONL event log (session_start/end, tool_call/result, brain_invoke/response, compression)
 ├── tools/
 │   └── skills_tool.py      # SKILL.md parsing + tool registration
 ├── cron/
@@ -401,6 +403,11 @@ Skills are matched by front-matter YAML headers:
 - **SimpleMem MCP setup** → use `simplemem-integration` skill
 - **Skill evolution** → use `skills-evolution-from-research` skill
 
+## Reference Files
+
+- `references/codegraph-mcp-setup.md` — CodeGraph MCP server setup: npm install, WASM SQLite index init (300s timeout), stale `.codegraph/` cleanup before re-init, `--path` config requirement, JSON-RPC echo verification.
+- `references/agent-loop-internals.md` — Agent runtime internals: run_conversation() flow, tool execution pipeline, session persistence (SQLite schema), context compression, hook system. Essential reference when modifying the agent loop, tool dispatch, or session persistence code.
+
 ## Related Skills
 
 - `hermes-agent` — End-user CLI usage guide
@@ -408,5 +415,6 @@ Skills are matched by front-matter YAML headers:
 - `native-mcp` — MCP protocol deep-dive configuration
 - `mcp-debugging` — MCP server debugging
 - `skills-evolution-from-research` — Skill evolution framework
+- `claude-managed-agents-research` — CMA architecture research, comparison with Hermes v2, self-evolution directions (ToolResult standardization, SessionEventLog, wake/replay)
 - `launchd-service-management` — Creating launchd plists for Gateway persistence
 - `hermes-evolver-integration` — Hermes + Evolver bridge for self-evolution

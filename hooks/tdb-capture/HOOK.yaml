@@ -1,0 +1,4 @@
+name: tdb-capture
+description: "Capture each agent turn to TencentDB-Agent-Memory for short-term memory compression"
+events:
+  - agent:end

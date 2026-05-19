@@ -2,10 +2,8 @@
 name: native-mcp
 description: "Use when registering a new MCP server with hermes, adding or configuring MCP servers via CLI or config, debugging MCP tool discovery, connecting a custom FastMCP server, setting up MCP auto-start, resolving MCP connection failures, understanding hermes-agent MCP architecture, or connecting stdio-mode MCP servers. NOT for: browsing GitHub issues or comments, code review workflows, CI/CD automation, LLM API configuration, non-MCP tool integrations, or general network setup."
 category: general
-version: 1.0.0
-...
+version: 1.1.0
 author: Hermes Agent
-...
 ---
 
 # Native MCP — Built-in MCP Client
@@ -14,12 +12,12 @@ Built-in MCP (Model Context Protocol) client that connects to external MCP serve
 
 ## Architecture
 
-
+```
 hermes-agent (MCP orchestrator)
   ├── MCP server 1 (stdio) → hermes spawns the subprocess
   ├── MCP server 2 (HTTP) → hermes connects as client
   └── MCP server N (stdio)
-
+```
 
 Hermes Agent uses the MCP Python SDK to manage external MCP servers. Servers communicate via **stdio** (subprocess stdin/stdout) or **HTTP** (SSE/streamable-http). The gateway process (`ai.hermes.gateway`) spawns MCP server subprocesses and proxies their tools to the LLM.
 
@@ -27,16 +25,16 @@ Hermes Agent uses the MCP Python SDK to manage external MCP servers. Servers com
 
 ### Via CLI (recommended)
 
-bash
+```bash
 hermes mcp add <name> --command <cmd> --args <args...> --env <KEY=VALUE>
 hermes mcp list          # Show all registered servers
 hermes mcp test <name>   # Test a server connection
 hermes mcp remove <name>  # Remove a server
-
+```
 
 **Examples:**
 
-bash
+```bash
 # sirchmunk MCP server
 hermes mcp add sirchmunk \
   --command sirchmunk \
@@ -47,13 +45,13 @@ hermes mcp add sirchmunk \
 hermes mcp add myserver \
   --command /path/to/venv/bin/python \
   --args /path/to/mcp_server.py
-
+```
 
 ### Via config.yaml
 
 MCP servers are stored in `~/.hermes/config.yaml`:
 
-yaml
+```yaml
 mcp:
   <server_name>:
     command: <executable_path>
@@ -63,18 +61,18 @@ mcp:
     env:
       <ENV_VAR>: <value>
     enabled: true
-
+```
 
 **Example:**
 
-yaml
+```yaml
 mcp:
   simplemem:
     command: /Users/can/.venv/bin/python
     args:
       - /Users/can/.hermes/scripts/simplemem_mcp.py
     enabled: true
-
+```
 
 ## FastMCP Server Development
 
@@ -89,17 +87,16 @@ mcp:
 - ✅ `instructions: str` (this is the description/instructions field)
 - ✅ `website_url: str | None`
 - ✅ `icons: list[Icon] | None`
-- ✅ `retry_interval: int | None`
 - ✅ `tool` kwarg accepts a list
 
 **Always verify with:**
-bash
+```bash
 ~/.hermes/hermes-agent/venv/bin/python -c "from mcp.server.fastmcp import FastMCP; import inspect; print(inspect.signature(FastMCP.__init__))"
-
+```
 
 ### FastMCP Example
 
-python
+```python
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP(
@@ -114,7 +111,7 @@ def my_tool(arg1: str, arg2: int) -> str:
 
 if __name__ == "__main__":
     mcp.run()
-
+```
 
 ## Stdio MCP Gotchas (Critical)
 
@@ -139,10 +136,68 @@ The hermes gateway (`ai.hermes.gateway.plist`) auto-starts at login with `RunAtL
 
 For HTTP MCP servers that need their own persistent process:
 
-bash
+```bash
 # Create plist at ~/Library/LaunchAgents/com.hermes.<name>.plist
 launchctl load ~/Library/LaunchAgents/com.hermes.<name>.plist
+```
 
+## Token Consumption Optimization
+
+Every MCP tool's `description` + `inputSchema` (the full JSON Schema) is injected into **every LLM prompt turn** as tool definitions. For servers with many complex tools this adds significant token overhead even when the tools aren't used (~6 KB / 1,500-2,000 tokens per turn for a typical 8-tool server).
+
+### Tool Registration Architecture
+
+MCP tools register via `tools/mcp_tool.py:register_mcp_servers()` → `_discover_and_register_server()` → `_register_server_tools()` with `toolset=f"mcp-{name}"`. An alias `name` is also registered so you can filter by either name. These tools then appear in `model_tools.py:_get_tool_definitions_uncached()` which builds the full tool list for every LLM call.
+
+### Solution 1: `disabled_toolsets` (Recommended)
+
+Add the MCP server's toolset to `disabled_toolsets` in `config.yaml`:
+
+```yaml
+disabled_toolsets:
+  - mcp-codegraph        # 8 CodeGraph tools: ~6KB/turn saved
+```
+
+**Behavior**: Tools stay registered in the tool registry but are filtered out of the LLM prompt at assembly time. Enable/disable at runtime: `/tools enable mcp-codegraph`, `/tools disable mcp-codegraph`. No config file edit needed.
+
+### Solution 2: `tools.include` / `tools.exclude` Filtering
+
+Filter which tools from a server are even registered, at registration time:
+
+```yaml
+mcp:
+  codegraph:
+    command: /path/to/codegraph
+    args: ["serve", "--mcp", "--path", "."]
+    tools:
+      include: [codegraph_context, codegraph_search, codegraph_files]
+```
+
+**Behavior**: Only listed tools enter the registry. Excluded tools contribute zero token overhead. Use `exclude` when you want most tools except a few noisy ones.
+
+### Solution 3: `enabled: false`
+
+Disable the entire server so no subprocess spawns and no tools are registered:
+
+```yaml
+mcp:
+  codegraph:
+    enabled: false
+```
+
+Re-enable with `hermes mcp restart codegraph`.
+
+### Practical Guidance
+
+| Approach | Token Saved | Re-enable Complexity | Best For |
+|----------|:-----------:|:--------------------:|----------|
+| `disabled_toolsets` | All tool schemas out of prompt | `/tools enable` (instant) | Infrequent-but-recurring use |
+| `tools.include` | Only kept tools' schemas count | Edit config + restart | Always-want-some-but-not-all |
+| `enabled: false` | Zero process or tool overhead | `mcp restart` (slower) | Rarely-used or seasonal servers |
+
+### Reference
+
+See `references/mcp-token-optimization.md` for a detailed case study with CodeGraph exact measurements, tool-by-tool schema sizes, and code path architecture notes.
 
 ## Troubleshooting
 
