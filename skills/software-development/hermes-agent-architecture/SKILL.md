@@ -1,6 +1,6 @@
 ---
 name: hermes-agent-architecture
-description: "Hermes Agent 项目架构 — cli.py、run_agent.py、HermesCLI、AIAgent 的关系，hermes mcp 子命令、MCP 服务器配置、Gateway/Dashboard 端口、state.db 内部诊断、以及如何正确添加新命令和 handlers。Use when modifying Hermes codebase, managing MCP server connections, debugging gateway startup, understanding the CLI-to-Agent relationship, or reading hermes internal state. NOT for: general agent usage (use hermes-agent skill), MCP server implementation details, writing agent prompts, or managing skills (those have their own skills)."
+description: "Hermes Agent 项目架构 — cli.py、run_agent.py、HermesCLI、AIAgent 的关系，hermes mcp 子命令、MCP 服务器配置与迁移(Gateway/Dashboard 端口)、state.db 内部诊断、MemoryProvider Plugin→MCP Server 解耦迁移流程、以及如何正确添加新命令和 handlers。Use when modifying Hermes codebase, managing MCP server connections, debugging gateway startup, understanding the CLI-to-Agent relationship, reading hermes internal state, OR migrating tools from Plugin to MCP Server. NOT for: general agent usage (use hermes-agent skill), writing agent prompts, or managing skills (those have their own skills)."
 category: general
 ---
 
@@ -405,8 +405,119 @@ Skills are matched by front-matter YAML headers:
 
 ## Reference Files
 
+- `references/mcp-migration-concrete.md` — Step-by-step guide for migrating tools from MemoryProvider Plugin to standalone MCP Server. Covers: MCP server creation pattern (FastMCP→REST HTTP), Plugin slimming (keep only lifecycle hooks), config.yaml registration, end-to-end testing with `ClientSession`, and pitfalls (.env quoting, stream API, atexit race).
 - `references/codegraph-mcp-setup.md` — CodeGraph MCP server setup: npm install, WASM SQLite index init (300s timeout), stale `.codegraph/` cleanup before re-init, `--path` config requirement, JSON-RPC echo verification.
 - `references/agent-loop-internals.md` — Agent runtime internals: run_conversation() flow, tool execution pipeline, session persistence (SQLite schema), context compression, hook system. Essential reference when modifying the agent loop, tool dispatch, or session persistence code.
+
+## Memory System Architecture & Coupling Analysis
+
+### MemoryProvider Plugin Architecture
+
+Hermes's memory system has **three distinct coupling paths** to external memory services (OpenViking, TDB-AM, etc.):
+
+| Path | Interface | Stability | Risk |
+|------|-----------|-----------|------|
+| **MemoryProvider ABC** (Plugin) | `get_tool_schemas()`, `handle_tool_call()` | 🔴 Hermes-version-coupled | ABC changes break tool registration |
+| **MCP Tools** (MCP protocol) | JSON-RPC 2.0 via stdio/HTTP | 🟢 Protocol-stable | Survives Hermes upgrades |
+| **Direct REST** (HTTP API) | HTTP client in Plugin | 🟢 Network-stable | Survives Hermes upgrades |
+
+### Tool Registration Flow (Current — Fragile)
+
+```
+Plugin.get_tool_schemas()
+    ↓ returns list of dict schemas
+MemoryManager._tool_to_provider[tool_name] = provider
+    ↓ registered in dispatch table
+AIAgent.setup() — appends schemas to self.tools (run_agent.py:2079-2093)
+    ↓ tool schemas sent to LLM
+LLM calls tool → memory_manager.has_tool(name)? → handle_tool_call(name, args)
+```
+
+**Breaks when Hermes upgrades**:
+- `get_tool_schemas()` signature changes (return type, arg format)
+- `handle_tool_call()` signature changes (arg dict format)
+- Plugin loading mechanism changes (ABC base class renamed/refactored)
+- Tool schema format changes (OpenAI tool_call format evolution)
+
+### MCP Tool Registration Flow (Stable)
+
+```
+MCP Server starts (stdio subprocess or HTTP)
+    ↓ advertises tools via JSON-RPC 2.0 `tools/list`
+Hermes Gateway connects via MCP client
+    ↓ auto-discovers schemas
+McpMcpClient → self.tools appended with mcp_ prefix
+    ↓ LLM calls mcp_viking_search → MCP server handles it
+```
+
+**Survives Hermes upgrades** because:
+- JSON-RPC 2.0 is a mature, unchanging spec (2013)
+- MCP protocol is an external standard, not a Hermes-internal ABC
+- Schema auto-discovery means no registration code changes
+- Hermes's MCP client (`tools/mcp_tool.py`) is separated from the agent loop
+
+### Lifecycle Hooks (Must Stay in Plugin)
+
+MCP protocol covers tool calls only, not agent lifecycle:
+
+| Hook | Purpose | MCP Replaceable? |
+|------|---------|------------------|
+| `initialize()` | Set up client, auth session | ❌ |
+| `on_session_end()` | Flush to external store | ❌ |
+| `system_prompt_block()` | Inject memory instructions | ❌ |
+| `prefetch()` | Background context loading | ❌ |
+| `shutdown()` | Clean threads, connections | ❌ |
+
+These must remain in the Plugin. But the Plugin should be a **thin adapter** (~50 lines) calling REST API, not containing business logic or tool definitions.
+
+### Optimal Decoupling Architecture
+
+```
+┌─ Hermes Agent ──────────────────────────────────────┐
+│                                                      │
+│  v1.0→v1.1→v1.2→v2.0  (Hermes upgrades)             │
+│  ─────────────────────                               │
+│  │ MCP Tools Layer │  ← SURVIVES upgrade unchanged   │
+│  │ Thin Plugin (50L)│  ← Easy to adapt (~15 min)     │
+│  └───────┬─────────┘                                 │
+└──────────┼───────────────────────────────────────────┘
+           │ REST API
+┌──────────┼───────────────────────────────────────────┐
+│  ┌───────┴──────────────────────────────┐            │
+│  │  Memory Service (Docker, v-agnostic) │            │
+│  │  OpenViking / TDB-AM / Custom        │            │
+│  └──────────────────────────────────────┘            │
+└──────────────────────────────────────────────────────┘
+```
+
+**Rules:**
+1. Tools (`viking_search`, `viking_read`, `memory_recall`, etc.) → **MCP Server** (protocol-stable)
+2. Lifecycle hooks (`on_session_end`, `prefetch`) → **Plugin thin adapter** (~50 lines, calls REST)
+3. Business logic (search indexing, embedding, consolidation) → **Memory Service side** (Docker container)
+4. Adding new memory features (agentmemory, etc.) → **New MCP Server**, zero Plugin changes
+
+### Upgrade Protection Matrix
+
+| Upgrade Scenario | Plugin-Only Design | **MCP-Decoupled Design** |
+|-----------------|-------------------|--------------------------|
+| Hermes changes MemoryProvider ABC | ❌ 6+ tools + 500+ lines break | ✅ Only ~50 line Plugin affected |
+| Hermes changes tool schema format | ❌ Tool reg fails | ✅ Schema auto-discovered from MCP |
+| Hermes deprecates MemoryProvider ABC | ❌ Entire memory system dead | ✅ Tools via MCP still work |
+| Memory Service upgrades REST API | ⚠️ Fix calls in Plugin | ✅ Same fix in MCP Server |
+| Add new memory feature (e.g., agentmemory) | ❌ New Plugin needed | ✅ Add MCP Server, zero Plugin |
+
+### Diagnostic: Verify Current Coupling
+
+```bash
+# Check which tools come from MemoryProvider (not MCP)
+grep -n "memory_manager\.has_tool\|memory_manager\.handle_tool_call" run_agent.py
+
+# List all MCP servers
+hermes mcp list
+
+# Check config for memory provider
+grep -A5 "^memory:" ~/.hermes/config.yaml
+```
 
 ## Related Skills
 

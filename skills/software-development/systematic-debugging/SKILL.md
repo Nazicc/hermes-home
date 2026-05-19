@@ -150,6 +150,7 @@ Before declaring a shell bug fixed, verify:
 - [ ] Script runs to completion without `set -e` early exit
 - [ ] Exit codes are checked explicitly after critical commands
 - [ ] No `[ $? -eq 0 ]` pattern after `set -e` (use sentinel variable)
+- [ ] No multi-byte Unicode chars adjacent to `$var` refs (use ASCII alternatives like `->` not `→`)
 - [ ] Paths are absolute, not relative to current directory
 
 ---
@@ -158,7 +159,8 @@ Before declaring a shell bug fixed, verify:
 
 1. **Don't fix without understanding** — You WILL create bugs
 2. **`set -e` + `[ $? -eq 0 ]`** — `$?` is the exit code of `[`, not the previous command. Use sentinel variable instead.
-3. **Silent failure** — commands that fail without error messages under `set -e`
+3. **`set -u` + multi-byte Unicode adjacent to `$var`** — Bash 将 `$VAR→TEXT` 中的 `→`（U+2192）尾字节识别为变量名合法字符，解析为 `${VAR→TEXT}` 导致 `unbound variable`。始终使用 `${VAR}` 花括号+ASCII 替代（`->` 而非 `→`）。
+4. **Silent failure** — commands that fail without error messages under `set -e`
 4. **Don't restart services blindly** — Observe first, then restart as a targeted test
 5. **Don't assume API stability** — APIs change. Check the actual contract
 6. **Stale state** — script reads cached files or environment from previous runs

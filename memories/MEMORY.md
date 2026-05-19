@@ -20,11 +20,7 @@
 §
 [SECURITY · 2026-04-29] git 仓库敏感信息审计：先用 `git log origin/main..HEAD` 扫 unpushed commits；用 `git log --all -S "sk-" --oneline` 搜历史（比 grep 快）；`.gitignore` 确保 `evolver/` 等含真实 key 的 .env 目录被排除；测试文件中的 `ghp_xx...xxxx` 类是占位符，非泄露；skills-quality 会误判 git 读取命令为 dangerous，skill 创建会被 block
 §
-[ENV · 2026-05-01] skills/ gitlink→普通目录已修复；push 408网络问题；skills/新增3个security skill(Hack-with-Github/Awesome-Hacking)
-§
-[ENV · 2026-05-19] OpenViking 已修复：端口1933，挂载 ~/.openviking:/app/.openviking，嵌入 = 硅基流动 BAAI/bge-large-zh-v1.5。所有 Viking 工具(viking_search/read/browse/remember/add_resource/memory_recall) 正常工作。FAL_KEY 在 .env 但未被启用（image_generate 用 MiniMax CLI）
-§
-[MULTI-AGENT · 2026-05-12] Hermes v2 方案已写：`/Users/can/.hermes/docs/multi-agent-team-v2.md`（18,614字节）。核心：4层体系(L0 Lead/L1 Profile/L2 delegate_task/L3 cron)；Hermes官方机制+Claude Code Agent Teams 5理念融合。Profile=一等公民(独立SOUL.md/.env/state.db/gateway)；Honcho共享记忆；Beads任务板；邮箱协议；Git worktree隔离。
+[ENV · 2026-05-19] OpenViking v0.3.17 on 127.0.0.1:1933, 嵌入=硅基流动 BAAI/bge-large-zh-v1.5，挂载 ~/.openviking:/app/.openviking。MCP迁移完成：6个Viking工具已移入独立MCP Server (~/.hermes/mcp-servers/openviking-mcp/)，Plugin瘦身至仅生命周期(plugins/memory/openviking/__init__.py, 411行)。Docker Desktop已配登录自启，容器restart: unless-stopped，docker-compose备份在~/.openviking/docker-compose.yml，每日7:00 cron健康检查。commit: f7fda06。
 §
 BLOOM方法论已内化：用户要求我所有复杂任务必须按B→L→O→O→M五步执行（Background身份设定→Location目标限定→Obligation约束规则→Output格式规范→Modify迭代优化），禁止跳过、禁止通用浅层回答。
 §
@@ -33,3 +29,7 @@ BLOOM方法论已内化：用户要求我所有复杂任务必须按B→L→O→
 [ENV · 2026-05-18] 上下文配置优化：max_turns=40, compression.threshold=0.40, protect_last_n=8, hygiene_hard_message_limit=100。废弃的 evolver/ 目录已删除。
 §
 [ENV · 2026-05-19] 每日4-6点自学cron已设置(self-evolution-learning, 轮换CMA研究方向)。Excalidraw→PNG: Playwright headless Chromium + 分享URL + screenshot。
+§
+[Bash] `set -u` + 多字节 Unicode（如 →）拖尾字节被 Bash 误识别为变量名，导致 `unbound variable`。修复：`${VAR}->${OTHER}`（花括号+ASCII箭头）。记录于 systematic-debugging skill。
+§
+[ARCHITECTURE · 永久] Hermes 记忆系统：最优解耦方案是工具→MCP Server(协议稳定)，生命周期→Plugin薄适配器(~50行)。MemoryProvider ABC(get_tool_schemas/handle_tool_call)是升级最脆弱点，MCP化后Hermes升级只影响50行Plugin，工具层不受影响。详见hermes-agent-architecture技能。
