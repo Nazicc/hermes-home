@@ -566,6 +566,7 @@ mcp_servers:
     args:
     - /Users/can/.hermes/simplemem_evolution/simplemem_evolution_mcp.py
     command: /Users/can/.hermes/mcp-venv/bin/python
+    cwd: /Users/can/.hermes/simplemem_evolution
     enabled: true
   sirchmunk:
     args:

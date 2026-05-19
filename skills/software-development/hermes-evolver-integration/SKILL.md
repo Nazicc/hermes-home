@@ -36,13 +36,14 @@ tail -5 ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/rtk_metric
 | Component | Path |
 |-----------|------|
 | Hermes state.db | `~/.hermes/state.db` |
-| Evolver scan dir | `~/.openclaw/agents/hermes-agent/sessions/` |
-| Evolver GEPA output | `~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/` |
-| Evolver bridge script | `~/.hermes/hermes-agent/scripts/hermes_to_evolver_bridge.py` |
-| Analysis script | `~/.hermes/hermes-agent/scripts/evolver_analysis.py` |
-| Evolution Event store | `~/.hermes/hermes-agent/scripts/evolver_to_simplemem.py` |
-| SimpleMem Evolution DB | `~/.hermes/simplemem_evolution/evolution.db` |
-| Cron job | "Hermes-Evolver Bridge + Analysis" (job_id: `a6dca85ab7a8`, every 4h) |
+| Evolver repo | `~/.hermes/hermes-agent-self-evolution/` |
+| Evolver GEPA output | `~/.hermes/hermes-agent-self-evolution/assets/gep/` |
+| Evolution scripts | `~/.hermes/scripts/evolution-self-check.sh`, `evolution-health.sh` |
+| Evolution wrapper | `~/.hermes/hermes-agent-self-evolution/run-evolution.sh` |
+| Evolution config | `~/.hermes/hermes-agent-self-evolution/evolution/core/config.py` |
+| Evolution venv | `/Users/can/.hermes/hermes-agent-self-evolution-venv/bin/python3` |
+| Cron: self-evolution-cycle | job_id: `8a91ef5593a1` (daily 2:00 CST) |
+| Cron: evolution-health-check | job_id: `5d27c1221c4b` (daily 10:00 CST) |
 
 ### Local Hooks (Claude Code)
 
@@ -60,25 +61,41 @@ tail -5 ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/rtk_metric
 
 ## Prerequisites
 
-### Network: ARK Volcengine Endpoint (NOT `api.openai.com`)
+### Network: DeepSeek API (Primary) via `run-evolution.sh`
 
-If `api.openai.com` is unreachable (TLS timeout), set `OPENAI_API_BASE` and `OPENAI_API_KEY` in `~/.hermes/hermes-agent/.env`:
+As of 2026-05-26, the self-evolution pipeline uses **DeepSeek API direct** (not Volcengine ARK, not MiniMax SkillClaw). Connection details:
 
-bash
-echo 'OPENAI_API_BASE=https://ark.cn-beijing.volces.com/api/coding/v3' >> ~/.hermes/hermes-agent/.env
-echo 'OPENAI_API_KEY=your-ark-api-key' >> ~/.hermes/hermes-agent/.env
+- **API Base:** `https://api.deepseek.com/v1`
+- **API Key:** `DEEPSEEK_API_KEY` in `~/.hermes/.env` (auto-injected by `run-evolution.sh`)
+- **Optimizer model:** `openai/deepseek-v4-pro`
+- **Eval model:** `openai/deepseek-v4-flash`
 
+The `run-evolution.sh` wrapper handles env var injection:
 
-The `evolve.js` Node CLI hardcodes `api.openai.com`, but `dotenv` loads `OPENAI_API_BASE` at startup, overriding the hardcoded value before any HTTP calls are made. No JavaScript patching required.
+```bash
+# Inside run-evolution.sh:
+export OPENAI_API_KEY=$(grep DEEPSEEK_API_KEY ~/.hermes/.env | cut -d= -f2-)
+export OPENAI_API_BASE=https://api.deepseek.com/v1
+```
+
+Do NOT call the evolution module directly — always use the wrapper to ensure correct API key and base URL.
 
 **Verify connectivity:**
-bash
-curl -s -o /dev/null -w "%{http_code}" \
-  -H "Authorization: Bearer <your-ark-key>" \
-  https://ark.cn-beijing.volces.com/api/coding/v3/models
+```bash
+curl -s --max-time 15 https://api.deepseek.com/v1/models \
+  -H "Authorization: Bearer $(grep DEEPSEEK_API_KEY ~/.hermes/.env | cut -d= -f2-)" \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'OK: {len(d[\"data\"])} models')"
+```
 
-Expected: `200`
+Expected: `OK: 2 models` (deepseek-v4-pro, deepseek-v4-flash)
 
+### ⛔ Legacy: SkillClaw Relay (Deprecated)
+
+The SkillClaw relay on `port 30000` acting as an OpenAI-proxy to MiniMax is **deprecated** as of 2026-05-26. The evolution scripts no longer reference it. The server process may still be running but is not used by any cron job or script.
+
+### ⛔ Legacy: Volcengine ARK (Quota Exhausted)
+
+The Volcengine ARK endpoint (`ark.cn-beijing.volces.com/api/coding/v3`) is **exhausted** (monthly quota exceeded, resets on the 26th of each month). Do not attempt to route the evolution pipeline through Volcengine.
 ### Platform: Use `python3`, NOT `python`
 
 On MacBooks, the default `python` command may not exist. Always use `python3` explicitly in scripts and cron commands.
@@ -214,38 +231,45 @@ Expected: Report showing candidate prompts and RTK metric estimates.
 
 ### Run One Evolution Cycle
 
-bash
-cd ~/.hermes/hermes-agent/hermes-agent-self-evolution
+```bash
+cd ~/.hermes/hermes-agent-self-evolution
 
-# Python CLI (recommended)
-OPENAI_API_BASE=https://ark.cn-beijing.volces.com/api/coding/v3 \
-OPENAI_API_KEY=your_ark_api_key \
-python3 -m evolver.cli run-cycle \
-  --scan-dir ~/.openclaw/agents/hermes-agent/sessions/ \
-  --output-dir assets/gep \
-  --model openai --model-name gpt-4o
+# Via run-evolution.sh wrapper (recommended — auto-injects DeepSeek API key):
+bash run-evolution.sh --skill gif-search --iterations 1 --dry-run
 
-# Alternative Node CLI
-OPENAI_API_KEY=sk-... node evolve.js
+# Or directly with env vars (for custom model routing):
+DEEPSEEK_API_KEY=sk-... \
+OPENAI_API_KEY=$DEEPSEEK_API_KEY \
+OPENAI_API_BASE=https://api.deepseek.com/v1 \
+python3 -m evolution.skills.evolve_skill \
+  --skill my-skill --iterations 3
+```
 
-# Alternative Python Module
-python3 -m gep.evolve --skills skills/ --output evolved/
+**Do NOT use the old:**
+- ❌ `evolve.js` Node CLI — deprecated, uses MiniMax/SkillClaw
+- ❌ `evolve_server` — deprecated (was on port 30000 via SkillClaw)
+- ❌ `python3 -m evolver.cli run-cycle` — renamed module structure
+- ❌ Volcengine ARK endpoint — quota exhausted
 
+### Daily Evolution Cycle (Automated)
 
-### Trigger Full Evolution Cycle (Continuous)
+The `self-evolution-cycle` cron job (job_id `8a91ef5593a1`) runs daily at 2:00 CST:
+1. Pre-flight check: `bash ~/.hermes/scripts/evolution-self-check.sh`
+2. Selects stale/low-quality skills from `~/.hermes/skills/`
+3. Runs evolution via `run-evolution.sh` (DeepSeek API direct)
+4. Reports results
 
-bash
-cd ~/.hermes/hermes-agent/hermes-agent-self-evolution
-OPENAI_API_BASE=https://ark.cn-beijing.volces.com/api/coding/v3 \
-OPENAI_API_KEY=your_ark_api_key \
-python3 -m evolve_server --use-skillclaw-config --engine workflow --publish-mode direct --interval 300
+The `evolution-health-check` cron job (job_id `5d27c1221c4b`) runs daily at 10:00 CST:
+1. Runs `bash ~/.hermes/scripts/evolution-self-check.sh`
+2. Reports pass/fail summary
 
+### Output Files
 
-Verify evolver output:
-bash
-tail -5 ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/events.jsonl
-tail -5 ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/capsules.json
-
+| Path | Contents |
+|------|----------|
+| `assets/gep/events.jsonl` | EvolutionEvents (score, signal tags) |
+| `assets/gep/capsules.json` | Gene diffs awaiting approval |
+| `assets/gep/rtk_metrics.jsonl` | Per-session RTK scores |
 
 ---
 
@@ -400,38 +424,26 @@ After GEPA produces a capsule in `capsules.json`:
 
 ## Cron Job Management
 
-### Method 1: Crontab
+Two cron jobs manage the evolution pipeline (updated 2026-05-26):
 
-bash
-crontab -e
-# Add:
-*/15 * * * * cd ~/.hermes/hermes-agent/scripts && python3 hermes_to_evolver_bridge.py >> ~/.hermes/logs/bridge.log 2>&1
+### `self-evolution-cycle` (job_id: `8a91ef5593a1`)
+- **Schedule:** daily 2:00 CST
+- **Action:** Runs evolution on stale/low-quality skills via `run-evolution.sh`
+- **Pre-flight:** Calls `evolution-self-check.sh` first
+- **Provider:** DeepSeek API direct (via `DEEPSEEK_API_KEY` from `.env`)
 
+### `evolution-health-check` (job_id: `5d27c1221c4b`)
+- **Schedule:** daily 10:00 CST
+- **Action:** Runs `evolution-self-check.sh`, reports pass/fail
+- **Purpose:** Early warning if evolution pipeline is broken
 
-**Verify:**
-bash
-crontab -l | grep bridge
+### List / Inspect / Trigger
 
-
-### Method 2: cronjob CLI
-
-bash
-# List cron jobs
-cronjob --list
-
-# View next run for evolver bridge
-cronjob --info a6dca85ab7a8
-
-# Manually trigger
-cronjob --trigger a6dca85ab7a8
-
-
-**Cron schedule:** `0 */4 * * *` (every 4 hours). Last run visible at `~/.hermes/cron/output/a6dca85ab7a8/`.
-
-### Adding Step 3 to Cron
-
-1. Edit the cron job prompt to include running `evolver_to_simplemem.py` after Step 2.
-2. Or add a separate cron job that runs `evolver_to_simplemem.py` every 4h on a 30-min offset from the bridge job.
+```bash
+cronjob action=list
+cronjob action=run job_id=8a91ef5593a1  # manual trigger
+cronjob action=run job_id=5d27c1221c4b
+```
 
 ---
 
@@ -439,12 +451,11 @@ cronjob --trigger a6dca85ab7a8
 
 | Path | Contents |
 |------|----------|
-| `~/.openclaw/agents/hermes-agent/sessions/*.jsonl` | Session transcripts |
-| `~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/rtk_metrics.jsonl` | Per-turn signal/quality metrics |
-| `~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/events.jsonl` | EvolutionEvents + ValidationReports |
-| `~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/capsules.json` | Gene diffs (PENDING/approved) |
-| `~/.hermes/cron/output/a6dca85ab7a8/*.md` | Cron job reports |
-| `~/.hermes/hermes-agent/hermes-agent-self-evolution/reports/` | Evolver cycle reports |
+| `~/.hermes/hermes-agent-self-evolution/assets/gep/events.jsonl` | EvolutionEvents + ValidationReports |
+| `~/.hermes/hermes-agent-self-evolution/assets/gep/capsules.json` | Gene diffs (PENDING/approved) |
+| `~/.hermes/hermes-agent-self-evolution/assets/gep/rtk_metrics.jsonl` | Per-session RTK scores |
+| `~/.hermes/cron/output/8a91ef5593a1/` | Self-evolution cycle reports |
+| `~/.hermes/cron/output/5d27c1221c4b/` | Health check reports |
 
 ### View Cycle Output
 
@@ -456,9 +467,11 @@ cat ~/.hermes/cron/output/6cf04f3139de/2026-*.md | tail -60
 
 ---
 
-## SkillClaw Config Override Workaround
+## ⛔ SkillClaw Config Override Workaround (Deprecated 2026-05-26)
 
-> ⚠️ **CRITICAL**: `_configure_hermes` in `claw_adapter.py` overwrites `~/.hermes/config.yaml` every time you run `hermes mcp add`, `hermes mcp remove`, `hermes config set`, or hermes-agent install/upgrade. If you need persistent config changes, apply them **after** SkillClaw runs.
+> ⚠️ SkillClaw is no longer used for self-evolution. The evolution pipeline connects directly to DeepSeek API. This section is kept for reference only; the SkillClaw relay (port 30000) may still be running but is not wired to any cron job or evolution script.
+
+**Historical issue:** `_configure_hermes` in `claw_adapter.py` overwrites `~/.hermes/config.yaml` every time you run `hermes mcp add`, `hermes mcp remove`, `hermes config set`, or hermes-agent install/upgrade.
 
 **Restore custom settings:**
 bash
@@ -480,29 +493,29 @@ python3 ~/.skillclaw/claw_adapter.py _check_hermes_config 2>/dev/null && echo "C
 
 ## Verification Checklist
 
-bash
-# 1. Bridge script exists
-ls ~/.hermes/hermes-agent/scripts/hermes_to_evolver_bridge.py
+```bash
+# 1. Evolution repo exists
+ls ~/.hermes/hermes-agent-self-evolution/
 
-# 2. Evolver process running
-ps aux | grep evolve_server | grep -v grep
+# 2. Scripts exist
+ls ~/.hermes/scripts/evolution-self-check.sh ~/.hermes/scripts/evolution-health.sh
 
-# 3. Sessions being synced
-ls -lt ~/.openclaw/agents/hermes-agent/sessions/ | head -3
+# 3. Evolution wrapper exists
+ls ~/.hermes/hermes-agent-self-evolution/run-evolution.sh
 
-# 4. GEPA producing output
-cat ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/events.jsonl | tail -1 | python3 -c "import sys,json; e=json.load(sys.stdin); print(e.get('type'), e.get('id'))"
+# 4. Config has DeepSeek defaults
+grep deepseek ~/.hermes/hermes-agent-self-evolution/evolution/core/config.py
 
-# 5. Analysis producing events/signals (if evolver_analysis.py is wired)
-cat ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/events.jsonl | tail -1 | python3 -c "import sys,json; e=json.load(sys.stdin); print(e.get('type'), e.get('id'))"
-# Expected: last EvolutionEvent entry
+# 5. Cron jobs registered
+cronjob action=list
+# Expected: self-evolution-cycle (8a91ef5593a1), evolution-health-check (5d27c1221c4b)
 
-# 6. SimpleMem Evolution Store populated (Step 3 is now LIVE)
-sqlite3 ~/.hermes/simplemem_evolution/evolution.db "SELECT COUNT(*) FROM evolution_entries;"
+# 6. Manual health check
+bash ~/.hermes/scripts/evolution-self-check.sh
 
-# 7. Manual bridge run
-cd ~/.hermes/hermes-agent && python3 scripts/hermes_to_evolver_bridge.py --dry-run
-
+# 7. DSPy import OK
+/Users/can/.hermes/hermes-agent-self-evolution-venv/bin/python3 -c "import dspy; print(dspy.__version__)"
+```
 
 ---
 
@@ -510,14 +523,12 @@ cd ~/.hermes/hermes-agent && python3 scripts/hermes_to_evolver_bridge.py --dry-r
 
 | Problem | Solution |
 |---------|----------|
-| Bridge script not found at `~/.hermes/scripts/` | Correct path is `~/.hermes/hermes-agent/scripts/hermes_to_evolver_bridge.py` |
-| Evolver API connectivity errors | Set `OPENAI_API_BASE` and `OPENAI_API_KEY` before running — see Network section |
-| Sessions not syncing | Check `~/.openclaw/agents/hermes-agent/sessions/` — verify `OPENCLAW_AGENT_DIR` env var matches |
-| TLS timeouts on MacBook | Use the ARK Volcengine endpoint documented above |
-| Config resets after `hermes config set` or install | Apply changes after SkillClaw runs, or run `restore_hermes_config.sh` |
-| SimpleMem evolution store empty | Step 3 bridge is not implemented — evolver output goes to files but not to SimpleMem |
-| GEPA hooks (gep_recall, etc.) not working | These are placeholder names, not implemented functions — use SQLite directly |
-| signals.json / events.jsonl show stale data | Bridge writing to wrong path — check rtk_metrics_path in hermes_to_evolver_bridge.py line ~228: should point to `hermes-agent-self-evolution/assets/gep/`, NOT `evolver/assets/gep/` |
+| `run-evolution.sh` fails with auth error | Check `DEEPSEEK_API_KEY` in `~/.hermes/.env` is valid — test with `curl -H "Authorization: Bearer $DEEPSEEK_API_KEY" https://api.deepseek.com/v1/models` |
+| Evolution module import errors | Must use the standalone evolution venv at `/Users/can/.hermes/hermes-agent-self-evolution-venv/bin/python3`, NOT the hermes-agent venv |
+| `python3 -m evolution.skills.evolve_skill` fails | Always use `run-evolution.sh` wrapper — it sets `PYTHONPATH` and `DEEPSEEK_API_KEY` correctly |
+| Cron jobs report "ModuleNotFoundError" | Cron runs as the user, but may not source `.env`. The cron prompt explicitly runs `run-evolution.sh` which handles env. Check the script's `.env` path is correct |
+| Volcengine ARK quota exceeded | Not a bug — monthly quota resets on the 26th. Until then all evolution must use DeepSeek API direct |
+| SkillClaw relay (port 30000) stopped | Expected — SkillClaw is deprecated for evolution. The system runs DeepSeek direct now |
 
 ---
 
