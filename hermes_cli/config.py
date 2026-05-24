@@ -3757,3 +3757,53 @@ def config_command(args):
         print("  hermes config path      Show config file path")
         print("  hermes config env-path  Show .env file path")
         sys.exit(1)
+
+
+# ===== Backport: cfg_get (from pre-v0.13 backup) =====
+def cfg_get(cfg: Optional[Dict[str, Any]], *keys: str, default: Any = None) -> Any:
+    """Traverse nested dict keys safely, returning ``default`` on any miss.
+
+    Canonical helper for the ``cfg.get("X", {}).get("Y", default)`` pattern
+    that appears 50+ times across the codebase. Handles three common gotchas
+    in one place:
+
+      1. Missing intermediate keys (returns ``default``, no KeyError).
+      2. An intermediate value that's not a dict (e.g. a user wrote a string
+         where a section was expected). Returns ``default`` instead of
+         AttributeError on ``.get()``.
+      3. ``cfg is None`` (callers sometimes pass ``load_config() or None``).
+
+    Named ``cfg_get`` rather than ``cfg_path`` to avoid shadowing the
+    ubiquitous ``cfg_path = _hermes_home / "config.yaml"`` local variable
+    that appears in gateway/run.py, cron/scheduler.py, main.py, etc.
+
+    Explicit ``None`` values are returned as-is (matches ``dict.get(key,
+    default)`` semantics — ``default`` is only returned when the key is
+    *absent*, not when it's present but set to ``None``).
+
+    Examples:
+        >>> cfg_get({"agent": {"reasoning_effort": "high"}}, "agent", "reasoning_effort")
+        'high'
+        >>> cfg_get({}, "agent", "reasoning_effort", default="medium")
+        'medium'
+        >>> cfg_get({"agent": "oops_a_string"}, "agent", "reasoning_effort", default="low")
+        'low'
+        >>> cfg_get(None, "anything", default=42)
+        42
+        >>> cfg_get({"a": {"b": None}}, "a", "b", default="def")  # explicit None preserved
+        >>> cfg_get({"a": {"b": False}}, "a", "b", default=True)  # falsy values preserved
+        False
+    """
+    if not isinstance(cfg, dict):
+        return default
+    node: Any = cfg
+    for key in keys:
+        if not isinstance(node, dict):
+            return default
+        if key not in node:
+            return default
+        node = node[key]
+    return node
+
+
+

@@ -194,3 +194,22 @@ def env_int(key: str, default: int = 0) -> int:
 def env_bool(key: str, default: bool = False) -> bool:
     """Read an environment variable as a boolean."""
     return is_truthy_value(os.getenv(key, ""), default=default)
+
+
+# ---------------------------------------------------------------------------
+# Backport: atomic_replace
+# Newer hermes-agent (tools/memory_tool.py) expects this; missing after a
+# repo split. Wraps os.replace so a tmp file can swap into place without
+# leaving a partial state on POSIX.
+# ---------------------------------------------------------------------------
+
+def atomic_replace(src, dst) -> None:
+    """Atomically rename ``src`` over ``dst``.
+
+    On POSIX ``os.replace`` is atomic when source and destination are on the
+    same filesystem (the common case for tmp-in-same-dir writes). On
+    cross-FS calls it falls back to a copy + unlink which is still safe
+    against torn writes.
+    """
+    import os
+    os.replace(src, dst)
