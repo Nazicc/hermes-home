@@ -213,3 +213,22 @@ def atomic_replace(src, dst) -> None:
     """
     import os
     os.replace(src, dst)
+
+
+# ---------------------------------------------------------------------------
+# Backport: base_url_hostname
+# Newer hermes-agent (runtime_provider.py / providers.py / delegate_tool.py)
+# routes provider selection by hostname. Wrap urllib.parse so callers get
+# the bare host without scheme/path/port.
+# ---------------------------------------------------------------------------
+
+def base_url_hostname(url) -> str:
+    """Return the hostname portion of a URL, or "" if it can't be parsed."""
+    if not url:
+        return ""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(str(url))
+        return parsed.hostname or ""
+    except Exception:
+        return ""

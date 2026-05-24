@@ -766,3 +766,16 @@ def save_job_output(job_id: str, output: str):
         raise
     
     return output_file
+
+
+# ---------------------------------------------------------------------------
+# Backport: AmbiguousJobReference
+# Newer hermes-agent (tools/cronjob_tools.py) imports this exception when
+# resolving a job id/name returns more than one match. Define it as a
+# plain ValueError subclass so existing callers that catch ValueError or
+# Exception keep working unchanged.
+# ---------------------------------------------------------------------------
+
+class AmbiguousJobReference(ValueError):
+    """Raised when a job-id prefix or name matches multiple jobs."""
+    pass
