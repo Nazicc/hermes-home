@@ -1,2 +1,0 @@
-{"id": "msg_5af35132e9fb496abcc0434c227b26a2", "role": "user", "role_id": "default", "parts": [{"type": "text", "text": "开始"}], "created_at": "2026-05-12T10:05:11.724214+00:00"}
-{"id": "msg_9268c5b4683249178c7bb8bcb53e62f1", "role": "assistant", "role_id": "hermes", "parts": [{"type": "text", "text": "Operation interrupted: waiting for model response (29.0s elapsed)."}], "created_at": "2026-05-12T10:05:11.759095+00:00"}

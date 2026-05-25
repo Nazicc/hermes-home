@@ -1,2 +1,0 @@
-{"id": "msg_e22b2006eeb740f8acb76d2b4f9fce64", "role": "user", "role_id": "default", "parts": [{"type": "text", "text": "你是谁？用一句话回答你的角色"}], "created_at": "2026-05-12T10:07:38.055564+00:00"}
-{"id": "msg_e9f69b1b10e84d8ea7d0ec2aece04c5f", "role": "assistant", "role_id": "hermes", "parts": [{"type": "text", "text": "我是 Hermes Agent Team 的 **Researcher**，专职技术调研与竞品分析，产出知识和建议，不写代码。"}], "created_at": "2026-05-12T10:07:38.070167+00:00"}

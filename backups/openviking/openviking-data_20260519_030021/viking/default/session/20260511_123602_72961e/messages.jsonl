@@ -1,6 +1,0 @@
-{"id": "msg_ce689b7569b049529f9920548a67bda0", "role": "user", "role_id": "default", "parts": [{"type": "text", "text": "好了没"}], "created_at": "2026-05-11T06:47:29.692341+00:00"}
-{"id": "msg_662651f2f0ea4516bdf8878de55f34d5", "role": "assistant", "role_id": "hermes", "parts": [{"type": "text", "text": "好了。上面就是完整评估。\n\n三个决策等你拍板：\n\n1. **OpenViking**：内置插件 or 保留 MCP？\n2. **Honcho SINK**：内置 dialectic or 保留自建 bridge？\n3. **现在升 or 等 v0.14？**"}], "created_at": "2026-05-11T06:47:29.731991+00:00"}
-{"id": "msg_d944c4dde1d14b819207942fa0d5911a", "role": "user", "role_id": "default", "parts": [{"type": "text", "text": "1 保留 MCP"}], "created_at": "2026-05-11T06:48:08.393049+00:00"}
-{"id": "msg_4da1fcbf28f44b3eba0a7b6ec0343d8a", "role": "assistant", "role_id": "hermes", "parts": [{"type": "text", "text": "Operation interrupted: waiting for model response (15.2s elapsed)."}], "created_at": "2026-05-11T06:48:08.454481+00:00"}
-{"id": "msg_784db6d9ddc44006b42c46b2c8094cde", "role": "user", "role_id": "default", "parts": [{"type": "text", "text": "2 保留自建 bridge\n3 现在升"}], "created_at": "2026-05-11T06:48:31.582379+00:00"}
-{"id": "msg_68be5eacd218492aa1eafecaeabbea89", "role": "assistant", "role_id": "hermes", "parts": [{"type": "text", "text": "Operation interrupted: waiting for model response (5.5s elapsed)."}], "created_at": "2026-05-11T06:48:31.629460+00:00"}

@@ -1,2 +1,0 @@
-{"id": "msg_26f0dfd8e484428d9299385724f48117", "role": "user", "role_id": "default", "parts": [{"type": "text", "text": "我是谁？你叫什么？"}], "created_at": "2026-05-12T08:29:38.221223+00:00"}
-{"id": "msg_d318955922824c78a0853bc255386d25", "role": "assistant", "role_id": "hermes", "parts": [{"type": "text", "text": "你是 r00tcc。\n\n我是 Worker-A。"}], "created_at": "2026-05-12T08:29:38.255993+00:00"}

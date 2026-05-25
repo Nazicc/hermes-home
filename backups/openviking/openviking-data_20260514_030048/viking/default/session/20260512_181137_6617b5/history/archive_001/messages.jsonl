@@ -1,2 +1,0 @@
-{"id": "msg_d22683bb9b3740639d205bc10523f9ce", "role": "user", "role_id": "default", "parts": [{"type": "text", "text": "不执行任何操作，直接回答 ok"}], "created_at": "2026-05-12T10:11:48.590383+00:00"}
-{"id": "msg_e88a670ebf0645a09b99dff9ef73eb9a", "role": "assistant", "role_id": "hermes", "parts": [{"type": "text", "text": "ok"}], "created_at": "2026-05-12T10:11:48.604525+00:00"}

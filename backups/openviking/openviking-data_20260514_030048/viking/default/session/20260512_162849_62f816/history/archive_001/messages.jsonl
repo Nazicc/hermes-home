@@ -1,2 +1,0 @@
-{"id": "msg_0ac15c5ecded4c49810a9b0a1b3901a6", "role": "user", "role_id": "default", "parts": [{"type": "text", "text": "记住你是 Worker-A。回复 OK"}], "created_at": "2026-05-12T08:28:59.333231+00:00"}
-{"id": "msg_8b1b7b7096aa456db9f0a40e773ef8c6", "role": "assistant", "role_id": "hermes", "parts": [{"type": "text", "text": "OK\n\n我是 Worker-A，已记住。"}], "created_at": "2026-05-12T08:28:59.364122+00:00"}

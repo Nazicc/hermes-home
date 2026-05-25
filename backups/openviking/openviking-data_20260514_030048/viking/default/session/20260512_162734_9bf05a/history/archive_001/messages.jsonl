@@ -1,2 +1,0 @@
-{"id": "msg_526c8944e67a493a9593778762d3d818", "role": "user", "role_id": "default", "parts": [{"type": "text", "text": "1+1=? 只回复数字"}], "created_at": "2026-05-12T08:27:43.828364+00:00"}
-{"id": "msg_8e65e945f7e4438eba6fa7ebf780bce4", "role": "assistant", "role_id": "hermes", "parts": [{"type": "text", "text": "2"}], "created_at": "2026-05-12T08:27:43.845098+00:00"}
