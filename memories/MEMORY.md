@@ -9,27 +9,22 @@
 §
 [ENV · 永久] 主力Provider: Volcengine/GLM-5.1；MiniMax CLI已认证可用(120 img/周)，命令: mmx image generate "prompt" -o out.png
 §
+[USER · 永久] 用户 r00tcc（飞书）。中文简洁偏好。工作风格：分析→全实现→测试→安装→回归→上线。每天末commit。Git重建：orphan清远程→empty commit→force push。
 §
-[USER · 永久] 用户名：r00tcc（飞书平台）
-§
-[USER · 永久] 沟通偏好：中文；简洁直接；不喜欢废话
-§
-[USER · 永久] 每天结束前必须 commit 所有改动，不留任何遗留工作。
-§
-[USER · 永久] 工作风格：分析后立即 full implementation；完整流程：分析→测试→安装→回归测试→上线；偏好系统性落地；每天结束前 commit
-§
-[SECURITY · 2026-04-29] git 仓库敏感信息审计：先用 `git log origin/main..HEAD` 扫 unpushed commits；用 `git log --all -S "sk-" --oneline` 搜历史（比 grep 快）；`.gitignore` 确保 `evolver/` 等含真实 key 的 .env 目录被排除；测试文件中的 `ghp_xx...xxxx` 类是占位符，非泄露；skills-quality 会误判 git 读取命令为 dangerous，skill 创建会被 block
-§
-[ENV · 2026-05-19] OpenViking v0.3.17 on 127.0.0.1:1933, 嵌入=硅基流动 BAAI/bge-large-zh-v1.5，挂载 ~/.openviking:/app/.openviking。MCP迁移完成：6个Viking工具已移入独立MCP Server (~/.hermes/mcp-servers/openviking-mcp/)，Plugin瘦身至仅生命周期(plugins/memory/openviking/__init__.py, 411行)。Docker Desktop已配登录自启，容器restart: unless-stopped，docker-compose备份在~/.openviking/docker-compose.yml，每日7:00 cron健康检查。commit: f7fda06。
+[ENV] TDB-AM: Docker :8420, plugin ~/.hermes/hermes-agent/plugins/memory/memory_tencentdb/, config provider=memory_tencentdb
 §
 BLOOM方法论已内化：用户要求我所有复杂任务必须按B→L→O→O→M五步执行（Background身份设定→Location目标限定→Obligation约束规则→Output格式规范→Modify迭代优化），禁止跳过、禁止通用浅层回答。
 §
-[ENV · 永久] CodeGraph MCP 工具默认禁用（disabled_toolsets: [mcp-codegraph]），需要时 /tools enable mcp-codegraph 启用，用完 /tools disable mcp-codegraph 关掉。避免每轮 6KB Schema 的 token 浪费。
+[FEATURE · 2026-05-24] 飞书输出偏好：紧凑键值列表（▸项✅摘要），禁 Markdown 表格。
 §
-[ENV · 2026-05-18] 上下文配置优化：max_turns=40, compression.threshold=0.40, protect_last_n=8, hygiene_hard_message_limit=100。废弃的 evolver/ 目录已删除。
+[FRAMEWORK · 永久] Hermes+Obsidian 联动框架：Hermes=AI调度中枢(模型/技能编排/任务执行)，Obsidian=本地存储仓库(笔记/素材/双链知识)。5大核心联动：智能检索/双向读写/专属技能/自动化工作流/格式适配。5大场景：知识管理/内容创作/逻辑推理/项目办公/智能体训练。规则：区分职能边界→管控权限→适配双链Markdown→小规模测试→定期备份→按需搭建技能流。已有obsidian/obsidian-canvas-creator/mermaid-visualizer/sn-md-to-html-report/sn-ppt等技能可用。
 §
-[ENV · 2026-05-19] 每日4-6点自学cron已设置(self-evolution-learning, 轮换CMA研究方向)。Excalidraw→PNG: Playwright headless Chromium + 分享URL + screenshot。
+[FIXED · 2026-05-25] SimpleMem Bridge: get_last_ended_at() float(content.split('\n')[0])修复；MAX_SESSIONS_PER_RUN=5限制防止积压；cron正常。ECCES: AgentShield v1.5.0扫Hermes Grade C/60,15+语言安全规则提取,ecc-security-toolkit技能已创建
 §
-[Bash] `set -u` + 多字节 Unicode（如 →）拖尾字节被 Bash 误识别为变量名，导致 `unbound variable`。修复：`${VAR}->${OTHER}`（花括号+ASCII箭头）。记录于 systematic-debugging skill。
+[LEARNED · 2026-05-24] Feishu Gateway 崩溃修复——用户通过 nanobot 修复 Hermes Feishu Gateway 的方法有效。Gateway 在 launchd 中的症状：state = spawn scheduled + last exit code = 1。修复后 gateway 在 port 8642 正常 LISTEN，飞书消息可正常收发。
 §
-[ARCHITECTURE · 永久] Hermes 记忆系统：最优解耦方案是工具→MCP Server(协议稳定)，生命周期→Plugin薄适配器(~50行)。MemoryProvider ABC(get_tool_schemas/handle_tool_call)是升级最脆弱点，MCP化后Hermes升级只影响50行Plugin，工具层不受影响。详见hermes-agent-architecture技能。
+[FRAMEWORK · 2026-05-25] AI个人重大决策辅助系统已内化。核心：AI做分析推演，用户做最终决定。5模块：①个人基准档案（诉求/资源/底线/目标）②客观信息搜集（案例/行业/多方利弊）③多维量化分析（成本/收益/长短期）④多方案路径推演（备选方案+乐观/中性/悲观模拟）⑤风险兜底预案（隐患+止损+退路）。五步流程：明确问题→录入现状→AI分析输出方案→模拟评估→用户定夺。应用场景：职业/财富/生活/副业。必须附带风险提示，增加反向质疑视角，拉长时间维度输出。
+§
+[PERMANENT · 2026-05-26] 决策案例库持久化路径：/Users/can/.hermes/hermes-agent/decisions/，每个 .md 文件记录一次决策分析，INDEX.md 自动维护索引。ai-decision-assistant skill 每次启用后必须将报告写入 decisions/ 目录。
+§
+[FRAMEWORK · 2026-05-25] Skills Bundles（技能包）体系已内化：将多个独立基础技能按场景/流程/逻辑打包，解决单技能孤立执行、操作繁琐、数据不通问题。核心：子技能集合+流程规则+数据规则+管控容错。搭建流程：拆解需求→拆分任务→编排依赖→统一参数→配置容错→联调测试→归档上线。agent规则：多步骤固定流程优先用技能包；强依赖步骤禁止跳步；统一参数格式+全局上下文；异常兜底必配；控制包体量剔除冗余；整体权限管理+归档。

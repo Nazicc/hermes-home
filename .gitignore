@@ -93,7 +93,18 @@ deer-flow-repo/
 .skillclaw_backups/
 platforms/
 bin/
-# ═══ More runtime ═══
+backups/
+datasets/
+.bridge_last_session.txt
+.install_method
+gateway.lock
+desktop.json
+desktop/
+lancedb_data/
+models/
+pairing/
+# ═══ Scripts runtime ═══
+scripts/.anthropic-learner-*.json
 .githooks/
 cron/.tick.lock
 cron/jobs.json
@@ -101,6 +112,7 @@ hermes-agent/
 launchd/com.hermes.deerflow-mcp.plist.disabled
 launchd/launchd/
 sessions/
+sessions.db
 simplemem_evolution/
 sirchmunk-data/
 skillclaw-health.sh

@@ -1,0 +1,22 @@
+name: simplemem_memory
+description: >
+  Bridges session data to SimpleMem (Working Memory + Evolution Store) and Hindsight VectorDB
+  when a feishu session ends (end_reason='compression').
+  This hook fires on session_compact events (context compression / session end).
+  Note: Gateway hook system required for live triggering.
+  Fallback: simplemem-memory-bridge cron job (every 30min) polls sessions table directly.
+
+trigger:
+  event: session_compact   # fires when session is context-compressed or ends
+  session_source: feishu   # only feishu sessions
+
+actions:
+  - id: extract_session_content
+    script: handler.py
+    args:
+      session_id: "{session_id}"
+      source: feishu
+
+on_error:
+  deliver: local
+  log_level: info
