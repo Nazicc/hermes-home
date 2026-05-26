@@ -602,6 +602,21 @@ mcp_servers:
     enabled: true
     env:
       HERMES_SKILLS_DIR: /Users/can/.hermes/skills
+  animus-mcp:
+    args:
+    - /Users/can/.hermes/hermes-agent/mcp-servers/animus-mcp/animus_mcp_server.py
+    command: /Users/can/.hermes/hermes-agent/grok-animus/.venv/bin/python
+    cwd: /Users/can/.hermes/hermes-agent/grok-animus
+    enabled: true
+    env:
+      SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY}
+      DEEPSEEK_BASE_URL: https://api.siliconflow.cn/v1
+      DEEPSEEK_MODEL: deepseek-ai/DeepSeek-V3
+  gitnexus:
+    args:
+    - mcp
+    command: /Users/can/.npm-global/bin/gitnexus
+    enabled: true
 platform_toolsets:
   cli:
   - browser

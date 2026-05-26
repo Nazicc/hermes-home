@@ -130,3 +130,6 @@ state.db-wal
 # ═══ Final runtime ═══
 skills/skill_stats.json
 .update_check
+
+# Animus companion data
+animus-data/

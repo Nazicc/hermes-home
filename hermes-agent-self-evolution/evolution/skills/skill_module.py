@@ -59,24 +59,32 @@ def find_skill(skill_name: str, hermes_agent_path: Path) -> Optional[Path]:
     """Find a skill by name in the hermes-agent skills directory.
 
     Searches recursively for a SKILL.md in a directory matching the skill name.
+    Uses os.walk (follows symlinks) instead of rglob (does not follow symlinks in Python 3.14+).
     """
+    import os as _os
+
     skills_dir = hermes_agent_path / "skills"
     if not skills_dir.exists():
         return None
 
     # Direct match: skills/<category>/<skill_name>/SKILL.md
-    for skill_md in skills_dir.rglob("SKILL.md"):
-        if skill_md.parent.name == skill_name:
-            return skill_md
+    # Use os.walk with followlinks=True to handle symlinked skill dirs
+    for root, dirs, files in _os.walk(str(skills_dir), followlinks=True):
+        if "SKILL.md" in files:
+            parent_name = _os.path.basename(root)
+            if parent_name == skill_name:
+                return Path(root) / "SKILL.md"
 
     # Fuzzy match: check the name field in frontmatter
-    for skill_md in skills_dir.rglob("SKILL.md"):
-        try:
-            content = skill_md.read_text()[:500]
-            if f"name: {skill_name}" in content or f'name: "{skill_name}"' in content:
-                return skill_md
-        except Exception:
-            continue
+    for root, dirs, files in _os.walk(str(skills_dir), followlinks=True):
+        if "SKILL.md" in files:
+            skill_md = Path(root) / "SKILL.md"
+            try:
+                content = skill_md.read_text()[:500]
+                if f"name: {skill_name}" in content or f'name: "{skill_name}"' in content:
+                    return skill_md
+            except Exception:
+                continue
 
     return None
 
