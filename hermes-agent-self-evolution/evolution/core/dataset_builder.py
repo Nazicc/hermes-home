@@ -132,15 +132,32 @@ class SyntheticDatasetBuilder:
             )
 
         # Parse the generated test cases
+        cases_raw = None
         try:
             cases_raw = json.loads(result.test_cases)
         except json.JSONDecodeError:
-            # Try to extract JSON from the response
+            # Strategy 1: find the outermost brackets
             import re
             match = re.search(r'\[.*\]', result.test_cases, re.DOTALL)
             if match:
-                cases_raw = json.loads(match.group())
-            else:
+                try:
+                    cases_raw = json.loads(match.group())
+                except json.JSONDecodeError:
+                    cases_raw = None
+
+            # Strategy 2: fix common LLM JSON quirks (single-quoted keys, trailing commas)
+            if cases_raw is None:
+                fixed = result.test_cases
+                fixed = re.sub(r"'([^']+)'", lambda m: f'"{m.group(1)}"', fixed)
+                fixed = re.sub(r',\s*\]', ']', fixed)
+                fixed = re.sub(r',\s*\}', '}', fixed)
+                fixed = re.sub(r'//.*$', '', fixed, flags=re.MULTILINE)
+                try:
+                    cases_raw = json.loads(fixed)
+                except json.JSONDecodeError:
+                    cases_raw = None
+
+            if cases_raw is None:
                 raise ValueError(f"Could not parse test cases from LLM output: {result.test_cases[:200]}")
 
         examples = [

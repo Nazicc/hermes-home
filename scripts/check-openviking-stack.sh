@@ -96,12 +96,10 @@ else
 fi
 
 # 7. Config YAML 引用
-if grep -q "openviking" ~/.hermes/hermes-agent/config.yaml 2>/dev/null; then
-    if grep -q "enabled: true" ~/.hermes/hermes-agent/config.yaml 2>/dev/null; then
-        check "config.yaml MCP 引用" "ok"
-    else
-        check "config.yaml MCP 引用" "存在但未启用"
-    fi
+if grep -A4 "^  openviking:" ~/.hermes/config.yaml 2>/dev/null | grep -q "enabled: true"; then
+    check "config.yaml MCP 引用" "ok"
+elif grep -q "openviking" ~/.hermes/config.yaml 2>/dev/null; then
+    check "config.yaml MCP 引用" "存在但未启用"
 else
     check "config.yaml MCP 引用" "缺少 openviking 段"
 fi

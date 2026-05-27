@@ -1,9 +1,9 @@
 {
-  "last_report_path": "/Users/can/.hermes/logs/curator/20260517-170406",
-  "last_run_at": "2026-05-17T17:04:06.753825+00:00",
-  "last_run_duration_seconds": 63.317065,
-  "last_run_summary": "auto: no changes; llm: I've reviewed both agent-created skills. Here's the analysis:\n\n## Cluster scan\n\nWith only 2 agent-created skills, I scanned for prefix or domain-keyword clusters. The two skills are in completely different domains:\n\n- **`agent-memory-servic…",
+  "last_report_path": null,
+  "last_run_at": "2026-05-27T09:51:42.833630+00:00",
+  "last_run_duration_seconds": null,
+  "last_run_summary": "deferred first run — curator seeded, will run after one interval; use `hermes curator run --dry-run` to preview now",
   "last_run_summary_shown_at": null,
   "paused": false,
-  "run_count": 1
+  "run_count": 0
 }
