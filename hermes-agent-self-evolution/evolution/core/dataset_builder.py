@@ -110,7 +110,10 @@ class SyntheticDatasetBuilder:
 
     def __init__(self, config: EvolutionConfig):
         self.config = config
-        self.generator = dspy.ChainOfThought(self.GenerateTestCases)
+        self.generator = dspy.ChainOfThought(
+            self.GenerateTestCases,
+            backtrack_threshold=1e308,  # large enough to effectively never retry on parsing failures
+        )
 
     def generate(
         self,
@@ -145,13 +148,25 @@ class SyntheticDatasetBuilder:
                 except json.JSONDecodeError:
                     cases_raw = None
 
-            # Strategy 2: fix common LLM JSON quirks (single-quoted keys, trailing commas)
+# Strategy 2: fix common LLM JSON quirks (single-quoted keys, trailing commas)
             if cases_raw is None:
                 fixed = result.test_cases
-                fixed = re.sub(r"'([^']+)'", lambda m: f'"{m.group(1)}"', fixed)
-                fixed = re.sub(r',\s*\]', ']', fixed)
-                fixed = re.sub(r',\s*\}', '}', fixed)
-                fixed = re.sub(r'//.*$', '', fixed, flags=re.MULTILINE)
+                # Remove markdown code fences
+                fixed = re.sub(r'^```(?:json)?\s*', '', fixed, flags=re.MULTILINE)
+                fixed = re.sub(r'\s*```$', '', fixed, flags=re.MULTILINE)
+
+                # Fix Python-style single quotes → JSON double quotes
+                # 1. Fix keys: 'key': -> "key":
+                fixed = re.sub(r"'([a-zA-Z_][a-zA-Z0-9_]*)'\s*:", lambda m: '"' + m.group(1) + '":', fixed)
+                # 2. Fix values: : 'value' -> : "value" (with internal quote escaping)
+                def _fix_value(m):
+                    val = m.group(1)
+                    val = val.replace('\\', '\\\\')
+                    val = val.replace('"', '\\"')
+                    return ': "' + val + '"'
+                fixed = re.sub(r":\s*'([^']*)'", _fix_value, fixed)
+                # 3. Remove trailing commas before ] or }
+                fixed = re.sub(r',(\s*[}\]])', r'\1', fixed)
                 try:
                     cases_raw = json.loads(fixed)
                 except json.JSONDecodeError:

@@ -148,16 +148,16 @@ def sync_memories():
     try:
         # 先检查 hindsight 是否在运行
         r = subprocess.run(
-            ["curl", "-s", "--max-time", "5", "http://127.0.0.1:1935/health"],
+            ["curl", "-s", "--max-time", "5", f"{os.environ.get('HINDSIGHT_API_URL', 'http://localhost:18888').rstrip('/')}/health"],
             capture_output=True, text=True, timeout=8
         )
-        if r.returncode == 0 and "ok" in r.stdout.lower():
-            log("  ✓ Hindsight 服务在线，正在提取记忆库...")
+        if r.returncode == 0 and ("healthy" in r.stdout.lower() or "ok" in r.stdout.lower()):
+            hindsight_base = os.environ.get('HINDSIGHT_API_URL', 'http://localhost:18888').rstrip('/')
             # Get bank list
             r2 = subprocess.run(
                 ["curl", "-s", "--max-time", "10",
                  "-X", "POST",
-                 "http://127.0.0.1:1935/mcp",
+                 f"{hindsight_base}/mcp",
                  "-H", "Content-Type: application/json",
                  "-d", json.dumps({
                      "jsonrpc": "2.0",
@@ -176,7 +176,7 @@ def sync_memories():
                     "profile": r2.stdout[:2000]
                 })
         else:
-            log("  ⚠ Hindsight 服务未运行，跳过网络记忆提取")
+            log(f"  ⚠ Hindsight API 响应异常或未运行（健康检查失败）")
     except Exception as e:
         log(f"  ⚠ Hindsight 连接失败: {e}")
 

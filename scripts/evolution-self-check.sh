@@ -6,7 +6,7 @@
 set -euo pipefail
 
 EVO_DIR="/Users/can/.hermes/hermes-agent-self-evolution"
-VENV_PYTHON="/Users/can/.hermes/hermes-agent-self-evolution-venv/bin/python"
+VENV_PYTHON="/Users/can/.hermes/hermes-agent/venv/bin/python"
 HERMES_ENV="/Users/can/.hermes/.env"
 
 echo "=== Evolution Self-Check ==="
@@ -14,7 +14,6 @@ echo "Timestamp: $(date -Iseconds)"
 echo ""
 
 # 1. Read DeepSeek key
-echo "--- API Key ---"
 DEEPSEEK_API_KEY=""
 if [[ -f "$HERMES_ENV" ]]; then
     DEEPSEEK_API_KEY=$(grep "^DEEPSEEK_API_KEY=" "$HERMES_ENV" | cut -d'=' -f2- | tr -d '"' | tr -d "'" | xargs)

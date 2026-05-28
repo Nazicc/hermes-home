@@ -440,7 +440,6 @@ class PedagogicScorer:
 
     def _score_cross_references(self, skill: SkillFile) -> int:
         """Score cross-references dimension."""
-        from skills_quality.core import extract_references
         refs = extract_references(skill)
         if len(refs) >= 5:
             return 2
