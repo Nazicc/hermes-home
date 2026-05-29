@@ -1,6 +1,0 @@
-node_modules/
-*.pid
-*.lock
-dist-public/
-memory/
-logs/

@@ -1,45 +1,7 @@
 {
-  "timestamp": "2026-05-28T01:36:32.047663+00:00",
-  "total_new": 2,
-  "agent_related_new": 2,
-  "articles": [
-    {
-      "id": "d59bf48af2fa",
-      "url": "https://claude.com/blog/zero-trust-for-ai-agents",
-      "title": "Zero Trust for AI agents",
-      "source": "claude_blog_agents",
-      "source_type": "blog_agents",
-      "agent_related": true,
-      "content_preview": ""
-    },
-    {
-      "id": "70d31ceb4384",
-      "url": "https://claude.com/blog/how-coderabbit-used-claude-to-build-an-agent-orchestration-system",
-      "title": "How CodeRabbit used Claude to build an agent orchestration system",
-      "source": "claude_blog_code",
-      "source_type": "blog_claude_code",
-      "agent_related": true,
-      "content_preview": ""
-    }
-  ],
-  "agent_articles_with_content": [
-    {
-      "id": "d59bf48af2fa",
-      "url": "https://claude.com/blog/zero-trust-for-ai-agents",
-      "title": "Zero Trust for AI agents",
-      "source": "claude_blog_agents",
-      "source_type": "blog_agents",
-      "agent_related": true,
-      "content_preview": ""
-    },
-    {
-      "id": "70d31ceb4384",
-      "url": "https://claude.com/blog/how-coderabbit-used-claude-to-build-an-agent-orchestration-system",
-      "title": "How CodeRabbit used Claude to build an agent orchestration system",
-      "source": "claude_blog_code",
-      "source_type": "blog_claude_code",
-      "agent_related": true,
-      "content_preview": ""
-    }
-  ]
+  "timestamp": "2026-05-29T01:30:45.061808+00:00",
+  "total_new": 0,
+  "agent_related_new": 0,
+  "articles": [],
+  "agent_articles_with_content": []
 }
