@@ -258,3 +258,90 @@ docs = loader.load()
 - **Paper**: https://arxiv.org/abs/2212.04356
 - **Model cache**: `~/.cache/whisper/`
 - **Available on**: Linux, macOS (MPS), Windows (CUDA)
+
+## Purpose
+
+Transcribe speech audio to text across 99 languages, translate non-English speech to English, and identify spoken languages — all with a single PyTorch model requiring no task-specific fine-tuning, supporting six model sizes from 39M (tiny) to 1.55B (large-v3) parameters.
+
+## Why This Works
+
+**Concept 1: Multi-Task Training on 680k Hours.** Whisper is trained on 680k hours of weakly supervised audio from the web, covering 99 languages, multiple acoustic conditions, and both transcription and translation objectives. This single training run produces a model that generalizes to accents, background noise, and domain-specific terminology without per-language or per-domain fine-tuning.
+
+**Concept 2: Logit-Level Decode with Temperature Fallback.** The model outputs token logits over the multilingual GPT-2 tokenizer. When the primary decode (temperature=0, greedy) produces low-confidence tokens, Whisper automatically falls back through higher temperatures (0.2 → 0.4 → 0.6 → 0.8 → 1.0) with beam search, trading determinism for accuracy on difficult segments — a critical feature for noisy real-world audio.
+
+**Concept 3: Hierarchical Model Scaling for Budget Matching.** The six model sizes (tiny → turbo) follow a consistent architecture (encoder-decoder transformer with 2× encoder layers vs decoder), allowing the user to match VRAM budget to accuracy requirement. Turbo (809M) uses the encoder of large-v3 and a smaller decoder, achieving near-large accuracy at ~8× real-time on GPU.
+
+## Examples
+
+**Good: Transcribe a multi-speaker podcast with language auto-detection.**  
+Context: 45-minute podcast with English, Spanish code-switching and technical ML jargon.  
+```python
+import whisper
+model = whisper.load_model("turbo")                    # best accuracy/speed
+result = model.transcribe(
+    "podcast_episode_42.mp3",
+    initial_prompt="Podcast about machine learning, transformer architectures, LoRA fine-tuning.",
+    word_timestamps=True,
+    temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0)        # fallback for tough sections
+)
+for seg in result["segments"]:
+    print(f"[{seg['start']:.1f}s-{seg['end']:.1f}s] {seg['text']}")
+```
+
+**Good: Generate SRT subtitles for a multilingual training video.**  
+Context: Technical tutorial with presenter speaking Hindi, slides in English.  
+```bash
+whisper tutorial.mp4 --model large --language hi --output_format srt --word_timestamps True
+# Output: tutorial.srt with Hindi transcription, timestamps, and line breaks
+```
+
+**Good: Translate non-English customer support calls to English for analytics.**  
+Context: Global SaaS company needs English transcripts of Japanese support calls for analysis.  
+```python
+model = whisper.load_model("large")
+result = model.transcribe("japanese_call.wav", task="translate")  # outputs English
+with open("transcript_en.txt", "w") as f:
+    f.write(result["text"])
+```
+
+**Good: Real-time-like batch processing with faster-whisper.**  
+Context: Processing a 5-hour meeting recording on CPU with <4 GB RAM.  
+```python
+from faster_whisper import WhisperModel
+model = WhisperModel("base", device="cpu", compute_type="int8")   # quantized CPU
+segments, info = model.transcribe("all_hands_meeting.wav", beam_size=5)
+print(f"Detected language: {info.language} (p={info.language_probability:.2f})")
+for seg in segments:
+    print(f"[{seg.start:.2f}s -> {seg.end:.2f}s] {seg.text}")
+```
+
+## Anti-Patterns
+
+**Anti-Pattern 1: Omitting `initial_prompt` for domain-specific audio.**  
+Transcribing medical or technical audio without context leads to incorrect domain terms ("myocardial infarction" → "my car dial in faction"). Always provide a brief initial prompt describing the topic.
+
+**Anti-Pattern 2: Using `large` model for every task on limited hardware.**  
+Running large-v3 on a 6GB GPU causes OOM or swap thrashing. Match model size to hardware: `base` for clean English, `turbo` for general, `medium` for noisy audio, `large` only for 99-language or very challenging audio.
+
+**Anti-Pattern 3: Not specifying `language` when it's known.**  
+When the spoken language is known, passing `language="ja"` skips the language-detection forward pass (saving 3–5s) and avoids language confusion on short clips. Only omit for truly mixed-language content.
+
+**Anti-Pattern 4: Using Whisper for real-time / live captioning.**  
+Whisper processes fixed-length windows (30s chunks) with no streaming output until the chunk finishes. For real-time, use faster-whisper with VAD (voice activity detection) streaming, Deepgram, or AssemblyAI.
+
+## When NOT to Use
+
+1. **Real-time streaming transcription (<2s latency)** — Whisper processes full 30s audio chunks. For live captioning, use faster-whisper with `vad_filter=True` + stream mode, or managed APIs (Deepgram, AssemblyAI).
+2. **Text-to-speech / speech synthesis** — Whisper is strictly encoder-decoder for ASR. Use Bark, Coqui TTS, or ElevenLabs for generation.
+3. **Speaker diarization (who said what)** — Whisper outputs only text and timestamps, no speaker labels. Use PyAnnote Audio or AssemblyAI for speaker segmentation.
+4. **Music lyrics transcription** — Whisper treats music as speech and typically outputs garbled or hallucinated text. Use dedicated lyrics transcription (e.g., Demucs + Chorus) for music.
+5. **Very short audio clips (<1 second)** — The model processes 30-second windows internally; short clips get padded with silence, which degrades accuracy. For short commands, use a specialized KWS model (e.g., Porcupine, SpeechBrain).
+6. **Deploying in privacy-sensitive environments requiring on-device ASR** — While Whisper runs locally, the large model requires 10GB VRAM, which may exceed edge device budgets. Use tiny/base models or Distil-Whisper for edge deployment.
+
+## Cross-References
+
+- [audiocraft](/skills/audiocraft) — Music and audio generation (complementary: transcribe audio, then generate matching soundscape)
+- [faster-whisper](/skills/faster-whisper) — CTranslate2-optimized Whisper (4× faster, lower memory)
+- [huggingface-transformers](/skills/huggingface-transformers) — 🤗 Transformers Whisper API with pipeline support
+- [torchaudio](/skills/torchaudio) — Audio loading, resampling, and VAD preprocessing
+- [pyannote-audio](/skills/pyannote-audio) — Speaker diarization to pair with Whisper transcripts

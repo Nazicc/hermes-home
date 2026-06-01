@@ -126,4 +126,117 @@ To refresh this skill with updated documentation:
 1. Re-run the scraper with the same configuration
 2. The skill will be rebuilt with the latest information
 
+## Purpose
+
+Scale model training from a single GPU to hundreds by sharding all model parameters, gradients, and optimizer states across devices — reducing per-GPU memory from O(model) to O(model/num_gpus) with zero code changes to the model definition.
+
+## Why This Works
+
+**Concept 1: FULL_SHARD (ZeRO-3) — Everything Distributed.** FSDP shards parameters, gradients, and optimizer states across all data-parallel ranks. During forward, each rank all-gathers the parameters it needs, computes its portion, then discards non-owned parameters. During backward, gradients are reduce-scattered so each rank only stores its shard. Total memory per GPU ≈ model_size / world_size + peak activation memory, enabling single-GPU fitting of models that would otherwise require 8× the memory.
+
+**Concept 2: Hybrid SHARD_GRAD_OP (ZeRO-2).** Only gradients and optimizer states are sharded; parameters are replicated. This reduces communication volume (no all-gather on every forward layer) at the cost of higher per-GPU parameter memory. The sweet spot for models and cluster sizes where communication bandwidth is the bottleneck.
+
+**Concept 3: CPU Offloading & Activation Checkpointing.** FSDP can offload parameters, gradients, and optimizer states to CPU when GPU memory is exhausted. Combined with activation checkpointing (trading compute for memory by not storing intermediate activations), this allows training a 175B model on a single 80GB A100 — at roughly 2-3× slower than fully-GPU sharded.
+
+## Examples
+
+**Good: Wrapping a Llama Model with FSDP for 8-GPU Training**
+
+Wrap a HuggingFace model with auto-wrap policy so every transformer layer becomes an FSDP unit:
+```python
+import torch
+import torch.distributed as dist
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp.auto_wrap import transformer_auto_wrap_policy
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers.models.llama.modeling_llama import LlamaDecoderLayer
+
+dist.init_process_group(backend="nccl")
+torch.cuda.set_device(dist.get_rank())
+
+model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.1-8B", torch_dtype=torch.bfloat16)
+
+wrap_policy = transformer_auto_wrap_policy(transformer_layer_cls={LlamaDecoderLayer})
+fsdp_model = FSDP(
+    model,
+    auto_wrap_policy=wrap_policy,
+    sharding_strategy=torch.distributed.fsdp.ShardingStrategy.FULL_SHARD,
+    mixed_precision=torch.distributed.fsdp.MixedPrecision(param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16, buffer_dtype=torch.bfloat16),
+    device_id=torch.cuda.current_device(),
+)
+# Each GPU holds ~1/8 of parameters; 8B model fits on 8×A100 40GB with room for activations
+```
+
+**Good: FSDP2 (torch.compile-Compatible) with Custom Policy**
+
+Use the new FSDP2 API (`fully_shard`) which supports torch.compile end-to-end:
+```python
+from torch.distributed._composable.fsdp import fully_shard, MixedPrecisionPolicy
+
+model = AutoModelForCausalLM.from_pretrained("mistralai/Mistral-7B-v0.3", torch_dtype=torch.bfloat16)
+
+for layer in model.model.layers:
+    fully_shard(layer, policy=MixedPrecisionPolicy(param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16))
+fully_shard(model, policy=MixedPrecisionPolicy(param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16))
+
+model = torch.compile(model)  # FSDP2 natively supports torch.compile!
+```
+
+**Good: CPU Offloading for OOM Recovery**
+
+Enable parameter/gradient/optimizer offloading to CPU for memory-constrained setups:
+```python
+from torch.distributed.fsdp import CPUOffload
+
+fsdp_model = FSDP(
+    model,
+    cpu_offload=CPUOffload(offload_params=True),
+    auto_wrap_policy=wrap_policy,
+    sharding_strategy=ShardingStrategy.FULL_SHARD,
+    device_id=torch.cuda.current_device(),
+)
+# Offloads non-active parameters to CPU: 8B model needs ~16GB GPU instead of ~60GB
+```
+
+**Good: Gradient Checkpointing with FSDP for Long Context**
+
+Combine FSDP with activation checkpointing to train on 128K-length sequences:
+```python
+from torch.utils.checkpoint import checkpoint
+
+def forward_with_checkpoint(self, *args, **kwargs):
+    return checkpoint(self._forward_impl, *args, use_reentrant=False, **kwargs)
+
+fsdp_model = FSDP(model, auto_wrap_policy=wrap_policy, sharding_strategy=ShardingStrategy.FULL_SHARD)
+# Each layer's activations are recomputed during backward instead of stored:
+# 128K sequence @ 8B params: 80GB activation memory → ~8GB with checkpointing
+```
+
+## Anti-Patterns
+
+**Anti-Pattern 1: Using NO_SHARD (DDP Wrapper) When Memory Is the Constraint.** `ShardingStrategy.NO_SHARD` replicates the full model on every GPU — same memory as DDP. If you need FSDP at all, use `FULL_SHARD` or `SHARD_GRAD_OP`; NO_SHARD is only useful for comparing baselines or when memory is abundant but you still want FSDP's mixed-precision utilities.
+
+**Anti-Pattern 2: Not Using auto_wrap_policy for Large Models.** Wrapping the entire model in a single FSDP unit means all parameters are all-gathered at once, defeating the memory benefit. The `transformer_auto_wrap_policy` (or `size_based_auto_wrap_policy` with `min_num_params=1e6`) wraps each transformer layer individually so that forward/backward only holds one layer's parameters in memory at a time.
+
+**Anti-Pattern 3: Inconsistent Mixed-Precision Across Ranks.** Setting `param_dtype=torch.float16` on some ranks and `bfloat16` on others causes silent numerical divergence. Always pass the same `MixedPrecision` config to every FSDP instance in the job.
+
+**Anti-Pattern 4: Forgetting `device_id`.** Omitting `device_id=torch.cuda.current_device()` in FSDP initialization forces the module to sit on CPU initially, causing an extra GPU→CPU→GPU transfer on the first forward pass and potential hangs during the initial all-gather.
+
+## When NOT to Use
+
+- **Single-GPU training:** FSDP adds communication overhead for zero benefit on one GPU. Use no distributed strategy or DDP.
+- **Small models (<1B parameters):** The sharding overhead (all-gather, reduce-scatter) dominates training time. DDP is faster and simpler for small models.
+- **Models with irregular parameter shapes:** FSDP assumes roughly uniform parameter sizes per layer. Models with extreme size variation (e.g., embedding tables much larger than transformer layers) may benefit from manual wrapping.
+- **When fast iteration debugging is the goal:** FSDP's multi-process launch (torchrun) adds startup overhead (~5-30s). Use `accelerate` with a single-GPU config for rapid prototyping, then switch to FSDP for scaling.
+- **TPU training:** TPUs use XLA sharding (xm.optimization), not FSDP. Use PyTorch/XLA's SPMD integration instead.
+- **Training with heterogeneous GPU sizes:** FSDP assumes equal shards per rank. Mixing A100 80GB with RTX 4090 24GB in the same FSDP world leads to load imbalance. Use heterogeneous-aware strategies like DeepSpeed ZeRO-3 instead.
+
+## Cross-References
+
+- [pytorch-lightning](../../../optional-skills/pytorch-lightning/SKILL.md) — Lightning's Trainer abstracts FSDP setup into `strategy='fsdp'` with auto-configured wrapping
+- [peft](../training/peft/SKILL.md) — Combine FSDP sharding with LoRA adapters for massive model fine-tuning across many GPUs
+- **DeepSpeed ZeRO-3** — Alternative sharding engine with more granular offloading controls (offload to CPU, NVMe)
+- **torch.distributed (DDP)** — Simpler data-parallel strategy for models that fit on a single GPU
+- **torch.compile** — FSDP2 natively supports torch.compile for fused kernel execution across sharded parameters
+
 

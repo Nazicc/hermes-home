@@ -64,9 +64,11 @@ def run(cmd: list[str], timeout=30) -> str:
     except Exception as e:
         return f"[ERROR] {e}"
 
-
 def rsync_copy(src: Path, dst: Path, desc: str):
-    """Use rsync to copy a directory structure."""
+    """Use rsync to copy a directory structure.
+    Uses --no-xattrs to prevent macOS com.apple.provenance
+    propagation (which locks files in ~/Documents/).
+    """
     if not src.exists():
         log(f"⚠ 跳过 {desc}: 源路径不存在 {src}")
         return 0
@@ -78,21 +80,54 @@ def rsync_copy(src: Path, dst: Path, desc: str):
         str(src) + "/",
         str(dst) + "/",
     ]
-    result = run(cmd, timeout=120)
-    count = sum(1 for _ in dst.rglob("*") if _.is_file())
-    log(f"✓ {desc}: {count} 个文件 ({_human_size(src)})")
-    return count
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    if result.returncode == 0:
+        log(f"✓ {desc}: {_human_size(dst)}")
+        return 1
+    # macOS TCC blocked some files — try again with --ignore-existing
+    # so new files still get synced while locked files are preserved
+    log(f"⚠ {desc}: 部分文件被 TCC 锁定 (rsync rc={result.returncode})")
+    log(f"  {result.stderr[:200]}")
+    cmd_ie = [
+        "rsync", "-a", "--ignore-existing",
+        "--quiet",
+        str(src) + "/",
+        str(dst) + "/",
+    ]
+    subprocess.run(cmd_ie, capture_output=True, text=True, timeout=60)
+    log(f"  → 已同步新增文件")
+    return 1
 
 
 def cp_file(src: Path, dst: Path, desc: str):
-    """Copy a single file."""
+    """Copy a single file.  Rename-over strategy works around macOS TCC
+    blocking overwrites/unlink on files with com.apple.provenance
+    extended attributes inside ~/Documents/."""
     if not src.exists():
         log(f"⚠ 跳过 {desc}: 不存在")
         return False
     dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)
-    log(f"✓ {desc}: {dst.name}")
-    return True
+    # macOS TCC workaround: overwrite/unlink are blocked on files with
+    # com.apple.provenance xattr inside ~/Documents/. Write to a new
+    # temp file (always allowed), then try rename over dst (atomically
+    # replaces the directory entry, bypassing TCC on the old inode).
+    # On macOS Sequoia the rename itself may be blocked — fall back
+    # to writing a companion file alongside the locked destination.
+    tmp = dst.parent / f".{dst.name}.sync_tmp"
+    tmp.write_bytes(src.read_bytes())
+    try:
+        tmp.rename(dst)
+        shutil.copymode(src, dst)
+        log(f"✓ {desc}: {dst.name}")
+        return True
+    except PermissionError:
+        # Destination locked by com.apple.provenance — write alongside it
+        fallback = dst.parent / f"{dst.name}.new"
+        fallback.unlink(missing_ok=True)
+        tmp.rename(fallback)
+        shutil.copymode(src, fallback)
+        log(f"⚠ {desc}: {dst.name} 被 TCC 锁定，已写入 {fallback.name}")
+        return True
 
 
 def _human_size(path: Path) -> str:

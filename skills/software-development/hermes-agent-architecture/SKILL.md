@@ -4,6 +4,111 @@ description: "Hermes Agent 项目架构 — cli.py、run_agent.py、HermesCLI、
 category: general
 ---
 
+## Purpose
+
+Understanding Hermes Agent architecture prevents the most common development mistakes: placing MCP servers in wrong directories (they won't persist across git clones), creating independent launchd plists for MCP servers (they're subprocesses of the Gateway and get killed), or putting business logic directly in cli.py (it belongs in AIAgent/routes). This skill documents the actual codebase structure so you add features and fix bugs correctly the first time.
+
+---
+
+## Why This Works
+
+### 1. Process Isolation Prevents Cascade Failures
+
+The Gateway-to-MCP-servers process model is deliberately one-directional: Gateway spawns MCP servers as disposable stdio subprocesses, not the other way around. This means:
+
+- A crashing MCP server never takes down the Gateway
+- Gateway restarts automatically restart all MCP servers without user intervention
+- Memory leaks in a long-running MCP server are contained to that subprocess
+
+This is why launchd plists should only exist for the Gateway (and Sirchmunk) — everything else is a child process that gets cleaned up on Gateway restart.
+
+### 2. Config-Driven Discovery Reduces Boilerplate
+
+The `config.yaml` `mcp_servers` node and skills discovery path form a two-level registry system: config declares what exists, and the filesystem determines what's loaded. This means:
+
+- Adding a new MCP server is one `hermes mcp add` command (writes one YAML block)
+- Adding a new skill is one SKILL.md file (no registration needed)
+- Removing either is a single operation
+
+No database migrations, no import statements, no plugin registration hooks. The filesystem IS the registry.
+
+### 3. state.db as Single Source of Truth
+
+Session JSON files only contain message text. Token counts, end_reason, tool_call_count, compression_count — these live in state.db. When you need to answer "how many tokens did we use today" or "what's crashing," query state.db directly. This single-source design avoids the classic problem of splitting telemetry across files that can get out of sync.
+
+---
+
+## Anti-Patterns (Do NOT Do)
+
+1. **Stashing MCP Servers Outside the Repo** — Placing MCP server code in `~/.hermes/skills/` or any path not under `~/.hermes/hermes-agent/mcp-servers/`. A repo clone or `git clean` destroys uncommitted code. Always commit MCP servers to the repo.
+
+2. **Independent launchd Plists for MCP Servers** — Creating `~/Library/LaunchAgents/com.hermes.myserver.plist` for an MCP server that should be a Gateway child process. This leads to port conflicts, duplicate instances, and orphaned processes when Gateway restarts.
+
+3. **Business Logic in cli.py** — Writing command handlers directly in `HermesCLI.build_parser()` or command functions. Business logic belongs in `AIAgent` or dedicated `agent/*_commands.py` modules. CLI is a thin presenter layer.
+
+4. **Reading Session JSON for Metrics** — Parsing `~/.hermes/sessions/*.json` for token counts or end_reason. These files are message blobs. Use state.db SQLite queries instead — it has the actual metrics in indexed columns.
+
+5. **Direct `sys.exit()` in Command Handlers** — Calling `sys.exit(1)` from a command handler kills the Gateway process. Use `raise click.Abort()` or return an error object instead.
+
+---
+
+## Examples
+
+### Example 1: Adding a New MCP Server Correctly (Good)
+
+**Context**: You built a new `gitanalyzer-mcp` package that wraps Git analysis tools.
+
+**Correct approach**:
+1. Place the code at `~/.hermes/hermes-agent/mcp-servers/gitanalyzer-mcp/`
+2. Register with `hermes mcp add gitanalyzer --command python3 --args "-m mcp_servers.gitanalyzer_mcp"`
+3. Verify: `hermes mcp list` shows `gitanalyzer | python3 -m … | ✓ enabled`
+4. Commit: `cd ~/.hermes/hermes-agent && git add mcp-servers/gitanalyzer-mcp/ && git commit`
+
+**Result**: A `git clone` on another machine pulls the server automatically. No manual plist file. No port conflicts.
+
+**Why this works**: The code lives inside the Hermes repo (not a random `~/.hermes/skills/` dir), and the Gateway manages its lifecycle.
+
+### Example 2: Wrong Directory, Lost MCP Server (Bad)
+
+**Context**: You set up a Sirchmunk search MCP server.
+
+**Mistake**: You placed the Sirchmunk adapter script at `~/.hermes/custom-servers/sirchmunk.py` and added it to `config.yaml` manually.
+
+**What happened**: After running `hermes update` (which does `git pull` on the Hermes repo), the `git pull` succeeded but your `custom-servers/` directory outside the repo was untouched. However, your next `git clean -df` in the Hermes repo didn't delete it, so you thought it was safe — until you reinstalled Hermes on a new machine and forgot about `custom-servers/`.
+
+**Why this failed**: Any code that lives outside the Hermes repo won't survive a fresh install or machine migration. The single rule is: *code that the agent needs goes in the Hermes repo*.
+
+### Example 3: Launchd Plist for an MCP Subprocess (Bad)
+
+**Context**: A developer set up a launchd plist for a MCP server thinking it needs to be persistent.
+
+**Mistake**: Created `~/Library/LaunchAgents/com.hermes.deerflow-gateway.plist` for a DeerFlow MCP server.
+
+**What happened**: The launchd plist started a second DeerFlow MCP process (port 8001) independently of the Gateway. When the Gateway also spawned its own DeerFlow MCP, two instances ran simultaneously, both trying to bind the same port. Gateway logs showed `EEXIST: Address already in use`.
+
+**Why this failed**: MCP servers are children of the Gateway. When the Gateway starts, it spawns every configured MCP server. A separate launchd plist creates a duplicate. The correct fix is to remove the plist and let the Gateway manage the lifecycle.
+
+---
+
+## When NOT to Use
+
+### Excluded by Domain
+
+- **General Hermes usage** (config, chat, auth) → use `hermes-agent` skill
+- **MCP server debugging** (crashes, timeouts) → use `mcp-debugging` skill
+- **Evolver integration** (self-evolution, skill upgrades) → use `hermes-evolver-integration` skill
+- **SimpleMem MCP setup** → use `simplemem-integration` skill
+- **Skill evolution** (creating/modifying skills) → use `skills-evolution-from-research` skill
+
+### Boundary Conditions
+
+- **Don't use for writing agent prompts** — This skill documents the codebase, not prompting patterns
+- **Don't use for user-facing troubleshooting** — If a user asks "why is Hermes slow," use `hermes-diagnostics` instead
+- **Don't use for gateway deployment to new environments** — Use `hermes-atropos-environments` for deployment contexts
+- **Don't use when you just need to list skills** — Use `hermes skills list` or the `skills_list` tool
+
+---
+
 ## Project Structure Overview
 
 
@@ -393,20 +498,15 @@ Skills are matched by front-matter YAML headers:
 | Gateway logs | `~/.hermes/logs/gateway.log` |
 | Sirchmunk daemon | `~/Library/LaunchAgents/com.hermes.sirchmunk.plist` |
 
-## When NOT to use this skill
+---
 
-- **General Hermes usage** → use `hermes-agent` skill
-- **MCP server debugging** → use `mcp-debugging` skill
-- **Evolver integration** → use `hermes-evolver-integration` skill
-- **SimpleMem MCP setup** → use `simplemem-integration` skill
-- **Skill evolution** → use `skills-evolution-from-research` skill
+## Cross-References
 
-## Related Skills
-
-- `hermes-agent` — End-user CLI usage guide
-- `hermes-diagnostics` — state.db queries and health reports
-- `native-mcp` — MCP protocol deep-dive configuration
-- `mcp-debugging` — MCP server debugging
-- `skills-evolution-from-research` — Skill evolution framework
-- `launchd-service-management` — Creating launchd plists for Gateway persistence
-- `hermes-evolver-integration` — Hermes + Evolver bridge for self-evolution
+- **hermes-agent** — End-user CLI usage guide (complementary: this skill is for developers modifying Hermes)
+- **hermes-diagnostics** — state.db queries and health reports for actual runtime telemetry
+- **native-mcp** — MCP protocol deep-dive and configuration for adding HTTP MCP servers
+- **mcp-debugging** — Debug MCP server crashes and timeouts during development
+- **skills-evolution-from-research** — Skill evolution framework when adding new skills to the system
+- **launchd-service-management** — Correct launchd plist creation for Gateway persistence
+- **hermes-evolver-integration** — Hermes + Evolver bridge for self-evolution
+- **systematic-debugging** — Debugging approach for runtime issues discovered via state.db

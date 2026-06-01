@@ -1,16 +1,7 @@
 {
-  "timestamp": "2026-05-30T01:31:10.105289+00:00",
-  "total_new": 1,
+  "timestamp": "2026-06-01T01:31:00.246837+00:00",
+  "total_new": 0,
   "agent_related_new": 0,
-  "articles": [
-    {
-      "id": "4c3f83c24477",
-      "url": "https://claude.com/partners/google-cloud",
-      "title": "Google Cloud",
-      "source": "claude_blog_agents",
-      "source_type": "blog_agents",
-      "agent_related": false
-    }
-  ],
+  "articles": [],
   "agent_articles_with_content": []
 }

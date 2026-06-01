@@ -364,5 +364,109 @@ Supported platforms: NVIDIA (primary), AMD ROCm, Intel GPUs, TPUs
 - Paper: "Efficient Memory Management for Large Language Model Serving with PagedAttention" (SOSP 2023)
 - Community: https://discuss.vllm.ai
 
+## Purpose
+
+Serve LLMs at production throughput (1000+ tokens/sec per GPU) using PagedAttention and continuous batching, with an OpenAI-compatible API server, built-in quantization (AWQ/GPTQ/FP8), tensor/pipeline parallelism, and LoRA adapter hot-swapping.
+
+## Why This Works
+
+**Concept 1: PagedAttention — OS-Inspired KV Cache.** vLLM manages the KV cache in fixed-size blocks (pages) rather than contiguous memory, exactly like virtual memory pages in an OS. Non-contiguous physical pages are mapped to a contiguous logical view per sequence, eliminating the ~60-80% fragmentation waste of naive caching and allowing near-100% memory utilization.
+
+**Concept 2: Continuous Batching (Iteration-Level Scheduling).** Traditional systems batch at the request level — all sequences in a batch must finish before new ones join. vLLM schedules at every decoding iteration: finished sequences are evicted immediately and new ones are prefilled in the same step. This eliminates idle GPU cycles and dramatically increases throughput under variable-length workloads.
+
+**Concept 3: Speculative Decoding & Chunked Prefill.** vLLM decouples prefill (compute-bound) from decode (memory-bound) phases. Chunked prefill splits long contexts into smaller chunks that are interleaved with decode iterations, preventing TTFT spikes. Speculative decoding uses a draft model to guess multiple tokens per step, verified in parallel by the target model, giving 1.5-2.5× speedup on latency-sensitive workloads.
+
+## Examples
+
+**Good: OpenAI-Compatible Chat API with Prefix Caching**
+
+Deploy a chat model optimized for repeated system prompts (chatbots, agents):
+```bash
+vllm serve mistralai/Mistral-7B-Instruct-v0.3 \
+  --gpu-memory-utilization 0.95 \
+  --max-model-len 16384 \
+  --enable-prefix-caching \
+  --port 8000
+```
+```python
+from openai import OpenAI
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+# Prefix caching reduces TTFT by 40% on repeated system prompts
+response = client.chat.completions.create(
+    model="mistralai/Mistral-7B-Instruct-v0.3",
+    messages=[{"role": "system", "content": "You are a helpful assistant."},
+              {"role": "user", "content": "What is the capital of France?"}]
+)
+```
+
+**Good: Offline Batch-Level Prompt Processing**
+
+Process 50K prompts from a file with automatic batching and result writing:
+```python
+from vllm import LLM, SamplingParams
+
+llm = LLM(model="meta-llama/Llama-3.1-8B-Instruct", tensor_parallel_size=2, max_model_len=4096)
+params = SamplingParams(temperature=0.0, max_tokens=1024, stop=["<|eot_id|>"])
+
+with open("prompts.jsonl") as f:
+    prompts = [json.loads(line)["prompt"] for line in f]
+
+outputs = llm.generate(prompts, params)
+for out, inp in zip(outputs, prompts):
+    print(f"IN: {inp[:80]}... OUT: {out.outputs[0].text[:200]}...")
+```
+
+**Good: LoRA Adapter Serving with Runtime Switching**
+
+Serve a base model with multiple fine-tuned LoRA adapters and select per request:
+```bash
+vllm serve meta-llama/Llama-3.1-8B --enable-lora --max-lora-rank 64 --lora-modules code=./code-adapter chat=./chat-adapter
+```
+```python
+from openai import OpenAI
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+# Request routed through the "code" adapter
+resp = client.completions.create(model="meta-llama/Llama-3.1-8B", prompt="def fibonacci(n):", extra_body={"lora_name": "code"})
+```
+
+**Good: FP8 Inference on H100 for Maximum Throughput**
+
+Enable FP8 quantization at serve time (H100 native) for 2× throughput vs BF16:
+```bash
+vllm serve meta-llama/Llama-3.1-70B-Instruct \
+  --quantization fp8 \
+  --tensor-parallel-size 4 \
+  --gpu-memory-utilization 0.95 \
+  --max-num-seqs 256
+# 70B model fits on 4×H100 with ~1.5× throughput over BF16
+```
+
+## Anti-Patterns
+
+**Anti-Pattern 1: Using Non-Power-of-2 Tensor Parallelism.** vLLM requires the number of tensor-parallel GPUs to be a power of 2 (1,2,4,8). Using 3 or 6 GPUs silently falls back to a suboptimal distribution with load imbalance. Always use n=1,2,4,8 for TP.
+
+**Anti-Pattern 2: Serving Without Prefix Caching for Agent/Chain Workloads.** If your workload shares a common prefix (system prompt, conversation history), omitting `--enable-prefix-caching` misses 30-50% TTFT reduction. The cache auto-detects shared prefix blocks with no code changes.
+
+**Anti-Pattern 3: Setting `--max-model-len` Exceeding Available KV Cache.** Picking a model length that exceeds the physical KV cache (dependent on GPU memory × gpu-memory-utilization) causes silent fallback to CPU offloading or OOM. Calculate with: `num_layers × 2 × num_heads × head_dim × max_model_len / (block_size × 1024³)`.
+
+**Anti-Pattern 4: Exposing the Raw Server Without Rate Limits.** vLLM has no built-in rate limiting. A single client flooding requests will consume all KV cache slots and starve other users. Always deploy behind a reverse proxy (Nginx / Envoy) with request queuing and per-token rate limits.
+
+## When NOT to Use
+
+- **Single-offline generation (research/prototyping):** vLLM's initialization overhead (~10-30s to load weights) is wasted on one-off generations. Use HuggingFace transformers directly.
+- **CPU-only inference:** vLLM is GPU-native; for CPU inference use llama.cpp with GGUF quantization.
+- **Non-transformer architectures:** vLLM only supports decoder-only and encoder-decoder transformer LMs with RoPE/ALiBi position encoding.
+- **Edge / mobile deployment:** vLLM requires CUDA, ROCm, or XLA — no CoreML or TFLite support.
+- **Custom sampling strategies (beam search, contrastive):** vLLM exposes top-k, top-p, temperature, frequency/presence penalty, and beam search (limited). Complex custom logit processors require engine modification.
+- **When NVIDIA isn't the primary GPU:** While vLLM supports AMD ROCm and Intel XPU, performance and feature parity lag behind CUDA significantly.
+
+## Cross-References
+
+- [peft](../training/peft/SKILL.md) — Create LoRA adapters with PEFT, then serve them with vLLM's `--enable-lora`
+- [outlines](../inference/outlines/SKILL.md) — Use Outlines' `outlines.models.vllm(...)` backend for structured generation with vLLM serving
+- [pytorch-fsdp](../training/pytorch-fsdp/SKILL.md) — FSDP for training large models that vLLM can then serve via tensor parallelism
+- **tensorrt-llm** — NVIDIA's alternative for absolute peak performance on H100 clusters
+- **huggingface-tgi** — HuggingFace's production inference server; simpler but less flexible than vLLM
+
 
 

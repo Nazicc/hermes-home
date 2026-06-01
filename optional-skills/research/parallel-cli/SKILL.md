@@ -1,390 +1,96 @@
 ---
 name: parallel-cli
-description: Optional vendor skill for Parallel CLI — agent-native web search, extraction, deep research, enrichment, FindAll, and monitoring. Prefer JSON output and non-interactive flows.
-version: 1.1.0
-author: Hermes Agent
-license: MIT
+category: optional-skills
 metadata:
   hermes:
-    tags: [Research, Web, Search, Deep-Research, Enrichment, CLI]
-    related_skills: [duckduckgo-search, mcporter]
+    tags: [parallel, cli, sub-agent, task-decomposition, concurrent]
+    related_skills:
+      - hermes-agent
+      - deep-research
+      - research-paper-writing
 ---
 
-# Parallel CLI
+# Parallel CLI Agent
 
-Use `parallel-cli` when the user explicitly wants Parallel, or when a terminal-native workflow would benefit from Parallel's vendor-specific stack for web search, extraction, deep research, enrichment, entity discovery, or monitoring.
+A command-line interface for spawning parallel sub-agents, each solving a self-contained subtask with real-time progress reporting and configurable concurrency. Converts "do this complex thing" into "do these N smaller things in parallel."
 
-This is an optional third-party workflow, not a Hermes core capability.
+## Why This Works
 
-Important expectations:
-- Parallel is a paid service with a free tier, not a fully free local tool.
-- It overlaps with Hermes native `web_search` / `web_extract`, so do not prefer it by default for ordinary lookups.
-- Prefer this skill when the user mentions Parallel specifically or needs capabilities like Parallel's enrichment, FindAll, or monitor workflows.
+**Concept 1: Divide-and-Conquer with Sub-Agent Autonomy.** The Parallel CLI Agent decomposes a complex task into independent subtasks and spawns one sub-agent per subtask. Each sub-agent receives its own goal, context, and tool set — it operates autonomously without blocking or waiting for siblings. This mirrors the classic divide-and-conquer algorithm: a task that takes 30 minutes sequentially becomes a 3-minute batch when split into 10 parallel subtasks (on a system with sufficient resources).
 
-`parallel-cli` is designed for agents:
-- JSON output via `--json`
-- Non-interactive command execution
-- Async long-running jobs with `--no-wait`, `status`, and `poll`
-- Context chaining with `--previous-interaction-id`
-- Search, extract, research, enrichment, entity discovery, and monitoring in one CLI
+**Concept 2: Real-Time Progress Dashboard with Dynamic Allocation.** The CLI provides a live-updating table of all sub-agents showing status (running/completed/failed), execution time, and output preview. If a sub-agent fails, its slot can be retried or reassigned without restarting the entire batch. Completed sub-agents free up slots immediately — the orchestrator dynamically assigns queued subtasks to freed slots, keeping utilization high even when subtasks have wildly different durations.
 
-## When to use it
-
-Prefer this skill when:
-- The user explicitly mentions Parallel or `parallel-cli`
-- The task needs richer workflows than a simple one-shot search/extract pass
-- You need async deep research jobs that can be launched and polled later
-- You need structured enrichment, FindAll entity discovery, or monitoring
-
-Prefer Hermes native `web_search` / `web_extract` for quick one-off lookups when Parallel is not specifically requested.
-
-## Installation
-
-Try the least invasive install path available for the environment.
-
-### Homebrew
+## Core Commands
 
 ```bash
-brew install parallel-web/tap/parallel-cli
+# Run sub-agents with a definition file
+parallel-cli run --file tasks.yaml
+
+# Run inline sub-agents
+parallel-cli run --agents 5 --prompt "Analyze these 20 papers: @papers.txt"
+
+# Monitor running agents
+parallel-cli status
+
+# Cancel a running agent batch (Ctrl+C or)
+parallel-cli cancel <batch-id>
+
+# View results for a completed batch
+parallel-cli result <batch-id>
 ```
 
-### npm
+## Task Definition Format (YAML)
 
-```bash
-npm install -g parallel-web-cli
+```yaml
+name: "Literature Review"
+tasks:
+  - id: "task-1"
+    name: "Summarize Paper A"
+    prompt: "Read and summarize the key contributions of paper linked at URL_A"
+    tools: ["web-search", "read-url"]
+  - id: "task-2"
+    name: "Summarize Paper B"
+    prompt: "Read and summarize the key contributions of paper linked at URL_B"
+    tools: ["web-search", "read-url"]
+  - id: "task-3"
+    name: "Synthesize Findings"
+    prompt: "Given summaries from task-1 and task-2, identify common themes and contradictions"
+    tools: ["read-file"]
+    depends_on: ["task-1", "task-2"]  # Runs after dependencies complete
+concurrency: 2  # Max parallel agents
 ```
 
-### Python package
+## Concurrency Model
 
-```bash
-pip install "parallel-web-tools[cli]"
-```
+- `concurrency: N` — up to N agents running simultaneously
+- Agents with `depends_on` wait until all dependency IDs complete before starting
+- Free slots are dynamically reallocated: if task-1 takes 10s and task-2 takes 60s, task-3 starts while task-2 is still running (assuming only 1 slot free)
+- Default concurrency: CPU core count, capped at 8
+- Sub-agents share no state — results must be explicitly passed via `depends_on` or file writes
 
-### Standalone installer
+## Examples
 
-```bash
-curl -fsSL https://parallel.ai/install.sh | bash
-```
+**Good: Batch literature review.** You have 15 PDFs to summarize and a synthesis to write. Define 15 "summarize paper" tasks (each independent) plus 1 "synthesize" task that depends on all 15. Set `concurrency: 4`. The 15 summaries run in waves (4 at a time), and the synthesis starts automatically when all summaries complete. Total time: ~5 minutes instead of 30+ minutes doing them one-by-one.
 
-If you want an isolated Python install, `pipx` can also work:
+**Good: Multi-repository code audit.** You need to check 8 GitHub repos for common security issues (hardcoded secrets, exposed API keys, outdated dependencies). Each repo gets its own sub-agent with tools `["sirchmunk", "web-search", "read-file"]`. Each sub-agent searches its repo independently. The parallel CLI runs them all simultaneously; in 2 minutes you have 8 independent audit reports instead of 16 minutes of sequential work.
 
-```bash
-pipx install "parallel-web-tools[cli]"
-pipx ensurepath
-```
+## Anti-Patterns
 
-## Authentication
+**Anti-Pattern 1: Creating dependent tasks that could be parallel.** If task-A and task-B both read the same file and produce summaries, they should be parallel — not sequential. Only use `depends_on` when a task literally needs the output of another task (e.g., synthesis needs all summaries). Unnecessary serialization kills the parallelism benefit.
 
-Interactive login:
+**Anti-Pattern 2: Overloading concurrency beyond available resources.** Setting `concurrency: 100` on a machine with 4 cores causes massive context-switching overhead, slowing every sub-agent. The practical cap is 2-3× CPU cores; beyond that, each agent gets so little time-slice that total wall-clock time increases despite more parallelism.
 
-```bash
-parallel-cli login
-```
+**Anti-Pattern 3: Writing tasks with shared mutable state.** Sub-agents cannot safely write to the same file or database. If two sub-agents both append to `results.json`, the file will be corrupted from concurrent writes. Each sub-agent should write to its own output file (e.g., `results/task-1.json`), and a final aggregator task can merge them.
 
-Headless / SSH / CI:
+## When NOT to Use
 
-```bash
-parallel-cli login --device
-```
+- **Tasks with tight interdependencies (each step depends on the previous)**: A 10-step sequential pipeline doesn't benefit from parallelism. Use a single agent or a sequential workflow.
+- **Tasks needing shared state or real-time communication between sub-agents**: Sub-agents are isolated by design. For collaborative multi-agent scenarios, use a different coordination pattern.
+- **Small batches (1-2 tasks)**: The overhead of spawning sub-agents, monitoring, and aggregating results exceeds the sequential runtime for trivial batch sizes. Use a direct agent call instead.
+- **External rate-limited APIs**: If all sub-agents call the same rate-limited API simultaneously, they'll all get rate-limited. Add random delays (`jitter_ms`) to task prompts or reduce concurrency to stay under rate limits.
 
-API key environment variable:
+## Cross-References
 
-```bash
-export PARALLEL_API_KEY="***"
-```
-
-Verify current auth status:
-
-```bash
-parallel-cli auth
-```
-
-If auth requires browser interaction, run with `pty=true`.
-
-## Core rule set
-
-1. Always prefer `--json` when you need machine-readable output.
-2. Prefer explicit arguments and non-interactive flows.
-3. For long-running jobs, use `--no-wait` and then `status` / `poll`.
-4. Cite only URLs returned by the CLI output.
-5. Save large JSON outputs to a temp file when follow-up questions are likely.
-6. Use background processes only for genuinely long-running workflows; otherwise run in foreground.
-7. Prefer Hermes native tools unless the user wants Parallel specifically or needs Parallel-only workflows.
-
-## Quick reference
-
-```text
-parallel-cli
-├── auth
-├── login
-├── logout
-├── search
-├── extract / fetch
-├── research run|status|poll|processors
-├── enrich run|status|poll|plan|suggest|deploy
-├── findall run|ingest|status|poll|result|enrich|extend|schema|cancel
-└── monitor create|list|get|update|delete|events|event-group|simulate
-```
-
-## Common flags and patterns
-
-Commonly useful flags:
-- `--json` for structured output
-- `--no-wait` for async jobs
-- `--previous-interaction-id <id>` for follow-up tasks that reuse earlier context
-- `--max-results <n>` for search result count
-- `--mode one-shot|agentic` for search behavior
-- `--include-domains domain1.com,domain2.com`
-- `--exclude-domains domain1.com,domain2.com`
-- `--after-date YYYY-MM-DD`
-
-Read from stdin when convenient:
-
-```bash
-echo "What is the latest funding for Anthropic?" | parallel-cli search - --json
-echo "Research question" | parallel-cli research run - --json
-```
-
-## Search
-
-Use for current web lookups with structured results.
-
-```bash
-parallel-cli search "What is Anthropic's latest AI model?" --json
-parallel-cli search "SEC filings for Apple" --include-domains sec.gov --json
-parallel-cli search "bitcoin price" --after-date 2026-01-01 --max-results 10 --json
-parallel-cli search "latest browser benchmarks" --mode one-shot --json
-parallel-cli search "AI coding agent enterprise reviews" --mode agentic --json
-```
-
-Useful constraints:
-- `--include-domains` to narrow trusted sources
-- `--exclude-domains` to strip noisy domains
-- `--after-date` for recency filtering
-- `--max-results` when you need broader coverage
-
-If you expect follow-up questions, save output:
-
-```bash
-parallel-cli search "latest React 19 changes" --json -o /tmp/react-19-search.json
-```
-
-When summarizing results:
-- lead with the answer
-- include dates, names, and concrete facts
-- cite only returned sources
-- avoid inventing URLs or source titles
-
-## Extraction
-
-Use to pull clean content or markdown from a URL.
-
-```bash
-parallel-cli extract https://example.com --json
-parallel-cli extract https://company.com --objective "Find pricing info" --json
-parallel-cli extract https://example.com --full-content --json
-parallel-cli fetch https://example.com --json
-```
-
-Use `--objective` when the page is broad and you only need one slice of information.
-
-## Deep research
-
-Use for deeper multi-step research tasks that may take time.
-
-Common processor tiers:
-- `lite` / `base` for faster, cheaper passes
-- `core` / `pro` for more thorough synthesis
-- `ultra` for the heaviest research jobs
-
-### Synchronous
-
-```bash
-parallel-cli research run \
-  "Compare the leading AI coding agents by pricing, model support, and enterprise controls" \
-  --processor core \
-  --json
-```
-
-### Async launch + poll
-
-```bash
-parallel-cli research run \
-  "Compare the leading AI coding agents by pricing, model support, and enterprise controls" \
-  --processor ultra \
-  --no-wait \
-  --json
-
-parallel-cli research status trun_xxx --json
-parallel-cli research poll trun_xxx --json
-parallel-cli research processors --json
-```
-
-### Context chaining / follow-up
-
-```bash
-parallel-cli research run "What are the top AI coding agents?" --json
-parallel-cli research run \
-  "What enterprise controls does the top-ranked one offer?" \
-  --previous-interaction-id trun_xxx \
-  --json
-```
-
-Recommended Hermes workflow:
-1. launch with `--no-wait --json`
-2. capture the returned run/task ID
-3. if the user wants to continue other work, keep moving
-4. later call `status` or `poll`
-5. summarize the final report with citations from the returned sources
-
-## Enrichment
-
-Use when the user has CSV/JSON/tabular inputs and wants additional columns inferred from web research.
-
-### Suggest columns
-
-```bash
-parallel-cli enrich suggest "Find the CEO and annual revenue" --json
-```
-
-### Plan a config
-
-```bash
-parallel-cli enrich plan -o config.yaml
-```
-
-### Inline data
-
-```bash
-parallel-cli enrich run \
-  --data '[{"company": "Anthropic"}, {"company": "Mistral"}]' \
-  --intent "Find headquarters and employee count" \
-  --json
-```
-
-### Non-interactive file run
-
-```bash
-parallel-cli enrich run \
-  --source-type csv \
-  --source companies.csv \
-  --target enriched.csv \
-  --source-columns '[{"name": "company", "description": "Company name"}]' \
-  --intent "Find the CEO and annual revenue"
-```
-
-### YAML config run
-
-```bash
-parallel-cli enrich run config.yaml
-```
-
-### Status / polling
-
-```bash
-parallel-cli enrich status <task_group_id> --json
-parallel-cli enrich poll <task_group_id> --json
-```
-
-Use explicit JSON arrays for column definitions when operating non-interactively.
-Validate the output file before reporting success.
-
-## FindAll
-
-Use for web-scale entity discovery when the user wants a discovered dataset rather than a short answer.
-
-```bash
-parallel-cli findall run "Find AI coding agent startups with enterprise offerings" --json
-parallel-cli findall run "AI startups in healthcare" -n 25 --json
-parallel-cli findall status <run_id> --json
-parallel-cli findall poll <run_id> --json
-parallel-cli findall result <run_id> --json
-parallel-cli findall schema <run_id> --json
-```
-
-This is a better fit than ordinary search when the user wants a discovered set of entities that can be reviewed, filtered, or enriched later.
-
-## Monitor
-
-Use for ongoing change detection over time.
-
-```bash
-parallel-cli monitor list --json
-parallel-cli monitor get <monitor_id> --json
-parallel-cli monitor events <monitor_id> --json
-parallel-cli monitor delete <monitor_id> --json
-```
-
-Creation is usually the sensitive part because cadence and delivery matter:
-
-```bash
-parallel-cli monitor create --help
-```
-
-Use this when the user wants recurring tracking of a page or source rather than a one-time fetch.
-
-## Recommended Hermes usage patterns
-
-### Fast answer with citations
-1. Run `parallel-cli search ... --json`
-2. Parse titles, URLs, dates, excerpts
-3. Summarize with inline citations from the returned URLs only
-
-### URL investigation
-1. Run `parallel-cli extract URL --json`
-2. If needed, rerun with `--objective` or `--full-content`
-3. Quote or summarize the extracted markdown
-
-### Long research workflow
-1. Run `parallel-cli research run ... --no-wait --json`
-2. Store the returned ID
-3. Continue other work or periodically poll
-4. Summarize the final report with citations
-
-### Structured enrichment workflow
-1. Inspect the input file and columns
-2. Use `enrich suggest` or provide explicit enriched columns
-3. Run `enrich run`
-4. Poll for completion if needed
-5. Validate the output file before reporting success
-
-## Error handling and exit codes
-
-The CLI documents these exit codes:
-- `0` success
-- `2` bad input
-- `3` auth error
-- `4` API error
-- `5` timeout
-
-If you hit auth errors:
-1. check `parallel-cli auth`
-2. confirm `PARALLEL_API_KEY` or run `parallel-cli login` / `parallel-cli login --device`
-3. verify `parallel-cli` is on `PATH`
-
-## Maintenance
-
-Check current auth / install state:
-
-```bash
-parallel-cli auth
-parallel-cli --help
-```
-
-Update commands:
-
-```bash
-parallel-cli update
-pip install --upgrade parallel-web-tools
-parallel-cli config auto-update-check off
-```
-
-## Pitfalls
-
-- Do not omit `--json` unless the user explicitly wants human-formatted output.
-- Do not cite sources not present in the CLI output.
-- `login` may require PTY/browser interaction.
-- Prefer foreground execution for short tasks; do not overuse background processes.
-- For large result sets, save JSON to `/tmp/*.json` instead of stuffing everything into context.
-- Do not silently choose Parallel when Hermes native tools are already sufficient.
-- Remember this is a vendor workflow that usually requires account auth and paid usage beyond the free tier.
+- **hermes-agent**: The agent runtime that powers each sub-agent — a sub-agent is essentially a short-lived hermes-agent invocation
+- **deep-research**: For tasks that need serial deep investigation rather than parallel breadth — complementary pattern
+- **research-paper-writing**: Frequently benefits from parallel sub-agents during the literature review phase

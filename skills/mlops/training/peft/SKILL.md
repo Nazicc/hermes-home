@@ -425,3 +425,94 @@ TrainingArguments(learning_rate=1e-4)
 - **LoRA Paper**: arXiv:2106.09685
 - **QLoRA Paper**: arXiv:2305.14314
 - **Models**: https://huggingface.co/models?library=peft
+
+## Purpose
+
+Fine-tune large language models (1B–405B parameters) on consumer GPUs by training only a small set of adapter parameters (0.1–2% of total) using LoRA or its quantized variant QLoRA — preserving base model performance while slashing memory and compute costs.
+
+## Why This Works
+
+**Concept 1: Low-Rank Adaptation (LoRA).** Instead of updating the full weight matrix W (d×k), LoRA decomposes the update into two low-rank matrices A (r×k) and B (d×r) where r ≪ min(d,k). The forward pass becomes h = W₀x + BAx. This reduces trainable parameters from millions to thousands per layer while the frozen W₀ keeps the pretrained knowledge intact. Rank r controls expressiveness — typically 8–64 suffices.
+
+**Concept 2: Quantized Low-Rank Adaptation (QLoRA).** QLoRA pushes memory further by loading the base model in 4-bit NormalFloat (NF4) format via bitsandbytes, then applying LoRA adapters in full precision (BF16/FP16). The 4-bit weights are dequantized on-the-fly during forward passes, while gradients flow only through the LoRA adapters. This enables fine-tuning a 70B model on a single 48GB GPU.
+
+**Concept 3: Adapter Composition and Hot-Swapping.** LoRA adapters are independent delta weights (ΔW = BA) that can be merged into the base model (W = W₀ + α·BA/r) for zero-overhead inference, or kept separate for multi-adapter serving. Adapters can be combined via arithmetic (add, subtract, weighted average) to steer model behavior without retraining.
+
+## Examples
+
+**Good: Minimal LoRA Fine-Tuning for Text Classification**
+```python
+from peft import LoraConfig, get_peft_model
+from transformers import AutoModelForSequenceClassification
+
+model = AutoModelForSequenceClassification.from_pretrained("roberta-large", num_labels=3)
+lora_config = LoraConfig(r=8, lora_alpha=32, target_modules=["query", "value"], lora_dropout=0.1)
+model = get_peft_model(model, lora_config)
+# Only 0.08% of parameters are trainable
+model.print_trainable_parameters()  # trainable params: 294,912 || all params: 354,971,648 || trainable%: 0.0831
+```
+
+**Good: QLoRA for 70B Model Fine-Tuning on a Single GPU**
+```python
+from transformers import AutoModelForCausalLM, BitsAndBytesConfig
+from peft import LoraConfig, get_peft_model
+import torch
+
+bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16)
+model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-70b-hf", quantization_config=bnb_config, device_map="auto")
+lora_config = LoraConfig(r=16, lora_alpha=32, target_modules=["q_proj", "v_proj", "k_proj", "o_proj"], lora_dropout=0.05)
+model = get_peft_model(model, lora_config)
+# ~18GB VRAM total for training a 70B model
+```
+
+**Good: Saving and Loading Adapters After Fine-Tuning**
+```python
+# Save only the adapter weights (~6MB for r=8)
+model.save_pretrained("./my-lora-adapter")
+# Load adapter onto any base model
+from peft import PeftModel
+base = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-hf")
+model = PeftModel.from_pretrained(base, "./my-lora-adapter")
+# Merge adapter for zero-overhead inference
+merged = model.merge_and_unload()
+```
+
+**Good: Multi-Task Adapter Switching at Inference**
+```python
+from peft import PeftModel
+
+base = AutoModelForCausalLM.from_pretrained("mistralai/Mistral-7B-v0.1")
+# Switch between task-specific adapters
+model = PeftModel.from_pretrained(base, "./code-adapter")
+tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.1")
+print(model.generate(tokenizer("def fib(", return_tensors="pt").input_ids, max_new_tokens=50))
+
+model = PeftModel.from_pretrained(base, "./chat-adapter")  # hot-swap
+print(model.generate(tokenizer("Explain quantum computing", return_tensors="pt").input_ids, max_new_tokens=100))
+```
+
+## Anti-Patterns
+
+**Anti-Pattern 1: Targeting Every Linear Layer With LoRA.** Applying LoRA to every module (q_proj, v_proj, k_proj, o_proj, up_proj, down_proj, gate_proj, dense, etc.) balloons trainable parameters and VRAM usage with diminishing returns. For most tasks, targeting only attention projections (q_proj, v_proj) or attention + MLP (q, v, o, up, down) is sufficient. Benchmark your specific task before scaling rank or coverage.
+
+**Anti-Pattern 2: Using Full-Precision Base Weights With QLoRA.** QLoRA's memory savings come from the 4-bit base model. Loading the base in FP16 while applying LoRA adapters uses 4× more memory for the same result. Use BitsAndBytes 4-bit (NF4 or FP4) with bnb_4bit_compute_dtype=torch.bfloat16.
+
+**Anti-Pattern 3: Training With Too High a Learning Rate on Adapters.** Adapter weights are initialized near-zero (A is Kaiming uniform, B is zeros). Standard LLM LR schedules (1e-5 to 5e-5) work well. Higher LRs can cause training instability because the small adapter quickly overpowers the frozen base. Start with LR=2e-4 for LoRA, and scale down for larger ranks.
+
+**Anti-Pattern 4: Neglecting merge_and_unload Before Inference.** A PeftModel applies LoRA scaling at every forward pass, adding 5–15% latency. After serving, call model.merge_and_unload() to fuse adapters into the base weights — zero overhead inference with no quality loss.
+
+## When NOT to Use
+
+- **Full fine-tuning > 1% total parameters required:** If your task requires modifying more than ∼1% of weights (e.g., adding new knowledge domains), PEFT may underfit. Use full fine-tuning with FSDP or DeepSpeed instead.
+- **Massive domain shift from pretraining:** PEFT is best for task adaptation (instruction following, style transfer). For extreme domain shifts (medical imaging model used for astrophysics), the frozen weights limit adaptation.
+- **Real-time inference where adapter switching latency matters:** Adapter hot-swapping requires loading a new checkpoint. For sub-100ms inference SLAs, use merged models per task.
+- **When you need parameter-free training (random forest, SVM):** PEFT is a neural-network-specific technique. For classical ML, use sklearn or XGBoost.
+- **Very small base models (<100M parameters):** The overhead of the PEFT framework (adapter config, gradient computation through the base model) can exceed the cost of full fine-tuning.
+
+## Cross-References
+
+- [vllm](../../skills/vllm/SKILL.md) — Serve fine-tuned PEFT models with multi-LoRA adapter routing at inference
+- [pytorch-fsdp](../../skills/pytorch-fsdp/SKILL.md) — Combine FSDP sharding with PEFT for massive model fine-tuning across multiple GPUs
+- [trl](../../profiles/researcher/skills/mlops/training/trl/SKILL.md) — RLHF and DPO fine-tuning using PEFT as the backbone
+- **bitsandbytes** — 4-bit quantization backbone used by QLoRA
+- **axolotl** — End-to-end fine-tuning framework that wraps PEFT, FSDP, and bitsandbytes

@@ -610,31 +610,31 @@ class Article(BaseModel):
 | Automatic Retrying | ❌ No | ✅ Yes | ❌ No | ❌ No |
 | Learning Curve | Low | Low | Low | High |
 
-**When to choose Outlines:**
+When to choose Outlines:
 - Using local models (Transformers, llama.cpp, vLLM)
 - Need maximum inference speed
 - Want Pydantic model support
 - Require zero-overhead structured generation
 - Control token sampling process
 
-**When to choose alternatives:**
+When to choose alternatives:
 - Instructor: Need API models with automatic retrying
 - Guidance: Need token healing and complex workflows
 - LMQL: Prefer declarative query syntax
 
 ## Performance Characteristics
 
-**Speed:**
+Speed:
 - **Zero overhead**: Structured generation as fast as unconstrained
 - **Fast-forward optimization**: Skips deterministic tokens
 - **1.2-2x faster** than post-generation validation approaches
 
-**Memory:**
+Memory:
 - FSM compiled once per schema (cached)
 - Minimal runtime overhead
 - Efficient with vLLM for high throughput
 
-**Accuracy:**
+Accuracy:
 - **100% valid outputs** (guaranteed by FSM)
 - No retry loops needed
 - Deterministic token filtering
@@ -651,5 +651,124 @@ class Article(BaseModel):
 - `references/json_generation.md` - Comprehensive JSON and Pydantic patterns
 - `references/backends.md` - Backend-specific configuration
 - `references/examples.md` - Production-ready examples
+
+## Purpose
+
+Guarantee valid JSON, XML, code, or regex structure during LLM generation by constraining the token sampling process at the logit level — no retries, no regex parsing, no post-hoc validation.
+
+## Why This Works
+
+**Concept 1: Logit-Level FSM Masking.** Outlines converts a schema (JSON Schema, Pydantic model, regex, or CFG) into a Finite State Machine (FSM). At each decoding step, the FSM's current state determines which tokens are valid next entries. Invalid tokens have their logits set to -inf before softmax, making them impossible to sample. This is orders of magnitude faster than generate-then-validate.
+
+**Concept 2: Fast-Forward Optimization (Deterministic Path Shortcut).** When the FSM has exactly one valid next token (e.g., whitespace after a comma in JSON, or a closing brace), Outlines skips the model forward pass entirely and appends the token directly. In structured outputs where ~40-60% of positions are deterministic, this yields net speedup over unconstrained generation.
+
+**Concept 3: Schema-to-Grammar Compilation.** A Pydantic model → JSON Schema → Context-Free Grammar → FSM. Field constraints (min_length, pattern, ge/le, Literal, Enum) are compiled into the grammar, so generated outputs satisfy all constraints by construction — no Pydantic validation errors at runtime.
+
+## Examples
+
+**Good: Type-Safe Information Extraction from Noisy Text**
+
+Extract structured invoice data with field-level constraints:
+```python
+from pydantic import BaseModel, Field
+from typing import Literal
+import outlines
+
+class InvoiceLine(BaseModel):
+    description: str = Field(max_length=200)
+    quantity: int = Field(ge=1, le=999)
+    unit_price: float = Field(gt=0, le=1_000_000)
+    currency: Literal["USD", "EUR", "GBP", "JPY"]
+
+class Invoice(BaseModel):
+    invoice_number: str = Field(pattern=r"INV-\d{6}")
+    lines: list[InvoiceLine]
+    total: float
+
+model = outlines.models.transformers("microsoft/Phi-3-mini-4k-instruct")
+generator = outlines.generate.json(model, Invoice)
+invoice = generator("Extract: INV-004237, 3x Widgets @ $12.50, 2x Gadgets @ $99.95, total $237.40")
+# invoice.total == 237.40 — guaranteed valid float
+# invoice.invoice_number matches "INV-004237" — guaranteed by regex
+```
+
+**Good: Structured Classification with Logit-Biased Choices**
+
+Classify support tickets into predefined categories with guaranteed bounds:
+```python
+from pydantic import BaseModel, Field
+from typing import Literal
+import outlines
+
+class TicketClassification(BaseModel):
+    category: Literal["billing", "technical", "account", "feature_request"]
+    priority: Literal["P0", "P1", "P2", "P3"]
+    confidence: float = Field(ge=0.0, le=1.0)
+
+model = outlines.models.transformers("mistralai/Mistral-7B-Instruct-v0.3")
+classifier = outlines.generate.json(model, TicketClassification)
+result = classifier("Ticket: User cannot log in after password reset")
+# Guaranteed: result.category in {"billing","technical","account","feature_request"}
+```
+
+**Good: Regex-Guided Structured Generation for Phone Numbers**
+
+Generate synthetic data matching a specific phone pattern without post-processing:
+```python
+import outlines
+model = outlines.models.transformers("microsoft/Phi-3-mini-4k-instruct")
+phone_gen = outlines.generate.regex(model, r"\(\d{3}\) \d{3}-\d{4}")
+phone = phone_gen("Generate a US phone number:")
+# "(555) 123-4567" — guaranteed match; no post-filtering needed
+```
+
+**Good: Multi-Entity Extraction with Nested Enums**
+
+Extract all named entities and their relationships from a passage:
+```python
+from pydantic import BaseModel
+from typing import Literal
+
+class Relation(BaseModel):
+    subject: str
+    predicate: Literal["works_at", "founded", "acquired", "invests_in"]
+    object: str
+
+class KnowledgeGraph(BaseModel):
+    entities: list[dict]  # allowed to be flexible
+    relations: list[Relation]
+
+model = outlines.models.vllm("meta-llama/Llama-3.1-8B-Instruct")
+generator = outlines.generate.json(model, KnowledgeGraph)
+kg = generator("Elon Musk founded SpaceX in 2002. He also works at Tesla.")
+# kg.relations[0].predicate == "founded" — guaranteed one of the Literal values
+```
+
+## Anti-Patterns
+
+**Anti-Pattern 1: Using Outlines with API-Only Models for Complex Schemas.** Outlines' OpenAI backend has limited FSM control — the API model may still produce invalid JSON if the prompt doesn't instruct correctly. For production schema-guaranteed output with API models, use *Instructor* (which retries on validation failure) instead.
+
+**Anti-Pattern 2: Overly Complex Nested Pydantic Models Without Testing.** A schema with 10+ nesting levels and dozens of fields can produce a very large FSM that takes seconds to compile. Profile with `%time` before production use. If compilation exceeds 5s, flatten the schema or split into multiple generation passes.
+
+**Anti-Pattern 3: Using `str` Instead of `Literal` for Fixed-Vocabulary Fields.** Fields like `category: str` open the FSM to any string, defeating the purpose of structured generation. Always use `Literal["a", "b", "c"]` or `Enum` for bounded categorical fields — this dramatically shrinks the FSM and improves generation quality.
+
+**Anti-Pattern 4: Not Providing Context in the Prompt.** Outlines constrains *structure* but not *content*. Without clear extraction instructions, the model may fill fields with plausible but wrong values. Always include the source text and a clear instruction in the prompt string, even though Outlines guarantees the shape.
+
+## When NOT to Use
+
+- **API model backends (OpenAI, Anthropic):** Outlines cannot apply logit masking to remote API calls. Use *Instructor* for API models, which retries until valid output.
+- **Generation with free-form creativity:** If the output doesn't need a fixed schema (story generation, open-ended chat), Outlines adds unnecessary overhead and restricts the output space.
+- **Real-time streaming with mid-generation schema changes:** Outlines compiles the FSM once upfront; changing the schema mid-generation requires creating a new generator.
+- **When the schema is trivial (single boolean or integer):** A simple `generate.choice(model, ["yes","no"])` is overkill — a well-crafted prompt with logit bias is simpler.
+- **Models without a tokenizer that exposes a vocabulary:** Outlines needs the full token → logit mapping to build the FSM mask. Some quantized GGUF backends may not support this.
+- **Very large vocabularies (>300K tokens):** The FSM mask operation scales with vocabulary size and can become the bottleneck for decoding speed.
+
+## Cross-References
+
+- **vllm** — Use `outlines.models.vllm(...)` backend for structured generation at production throughput
+- **peft** — Fine-tune models with PEFT adapters, then use Outlines for structured inference on the adapted model
+- **pytorch-fsdp** — Train large models with FSDP for distributed training, then use Outlines for structured inference
+- **accelerate** — Use with Outlines for distributed structured generation across GPUs
+- **instructor** — Alternative for API models with automatic retry on validation failure
 
 

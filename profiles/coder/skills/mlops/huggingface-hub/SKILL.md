@@ -1,225 +1,81 @@
 ---
 name: huggingface-hub
-description: "Use when downloading, uploading, searching, or managing Hugging Face models, datasets, or Spaces — or when managing HF repos, querying datasets with SQL, deploying inference endpoints, or managing buckets. Works with the `hf` CLI and `huggingface_hub` Python package. NOT for: general file downloads from arbitrary URLs, non-HuggingFace model hosting, model training/fine-tuning, running local inference with llama.cpp/vllm (use those skills instead), or when the native HuggingFace SDK (Python) is more convenient than the CLI."
-category: general
+description: "HuggingFace hf CLI: search/download/upload models, datasets."
+version: 1.0.0
+author: Hugging Face
+license: MIT
+tags: [huggingface, hf, models, datasets, hub, mlops]
+platforms: [linux, macos, windows]
 ---
 
-## Install
+# Hugging Face CLI (`hf`) Reference Guide
 
-bash
-pip install huggingface_hub
-# or
-brew install huggingface-hub  # macOS
+The `hf` command is the modern command-line interface for interacting with the Hugging Face Hub, providing tools to manage repositories, models, datasets, and Spaces.
 
-# Verify
-hf --version
+> **IMPORTANT:** The `hf` command replaces the now deprecated `huggingface-cli` command.
 
+## Quick Start
+*   **Installation:** `curl -LsSf https://hf.co/cli/install.sh | bash -s`
+*   **Help:** Use `hf --help` to view all available functions and real-world examples.
+*   **Authentication:** Recommended via `HF_TOKEN` environment variable or the `--token` flag.
 
-## Auth
+---
 
-bash
-# Login (interactive — opens browser for token)
-hf login
+## Core Commands
 
-# Or set token directly
-huggingface-cli login
-# → Enter your HF token (from https://huggingface.co/settings/tokens)
+### General Operations
+*   `hf download REPO_ID`: Download files from the Hub.
+*   `hf upload REPO_ID`: Upload files/folders (recommended for single-commit).
+*   `hf upload-large-folder REPO_ID LOCAL_PATH`: Recommended for resumable uploads of large directories.
+*   `hf sync`: Sync files between a local directory and a bucket.
+*   `hf env` / `hf version`: View environment and version details.
 
-# Read token from env (recommended for non-interactive use)
-export HF_TOKEN=hf_xxxxx
+### Authentication (`hf auth`)
+*   `login` / `logout`: Manage sessions using tokens from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
+*   `list` / `switch`: Manage and toggle between multiple stored access tokens.
+*   `whoami`: Identify the currently logged-in account.
 
+### Repository Management (`hf repos`)
+*   `create` / `delete`: Create or permanently remove repositories.
+*   `duplicate`: Clone a model, dataset, or Space to a new ID.
+*   `move`: Transfer a repository between namespaces.
+*   `branch` / `tag`: Manage Git-like references.
+*   `delete-files`: Remove specific files using patterns.
 
-## CLI (`hf`)
+---
 
-### Download
-bash
-# Download a model (all files)
-hf download meta-llama/Llama-3.1-8B
+## Specialized Hub Interactions
 
-# Download specific files
-hf download bigcode/starcoder2-3b --filename config.json
-hf download meta-llama/Llama-2-7b --include "*.safetensors"
+### Datasets & Models
+*   **Datasets:** `hf datasets list`, `info`, and `parquet` (list parquet URLs).
+*   **SQL Queries:** `hf datasets sql SQL` — Execute raw SQL via DuckDB against dataset parquet URLs.
+*   **Models:** `hf models list` and `info`.
+*   **Papers:** `hf papers list` — View daily papers.
 
-# Download to a specific directory
-hf download mistralai/Mistral-7B-v0.3 --local-dir ./models/mistral
+### Discussions & Pull Requests (`hf discussions`)
+*   Manage the lifecycle of Hub contributions: `list`, `create`, `info`, `comment`, `close`, `reopen`, and `rename`.
+*   `diff`: View changes in a PR.
+*   `merge`: Finalize pull requests.
 
-# Download a dataset
-hf download datasets wikitext --save-history
+### Infrastructure & Compute
+*   **Endpoints:** Deploy and manage Inference Endpoints (`deploy`, `pause`, `resume`, `scale-to-zero`, `catalog`).
+*   **Jobs:** Run compute tasks on HF infrastructure. Includes `hf jobs uv` for running Python scripts with inline dependencies and `stats` for resource monitoring.
+*   **Spaces:** Manage interactive apps. Includes `dev-mode` and `hot-reload` for Python files without full restarts.
 
-# Full directory via snapshot-download
-hf hub snapshot-download <repo_id> [--local-dir <path>]
+### Storage & Automation
+*   **Buckets:** Full S3-like bucket management (`create`, `cp`, `mv`, `rm`, `sync`).
+*   **Cache:** Manage local storage with `list`, `prune` (remove detached revisions), and `verify` (checksum checks).
+*   **Webhooks:** Automate workflows by managing Hub webhooks (`create`, `watch`, `enable`/`disable`).
+*   **Collections:** Organize Hub items into collections (`add-item`, `update`, `list`).
 
+---
 
-### Upload
-bash
-# Upload a file
-hf upload username/my-model ./pytorch_model.bin --message "initial upload"
+## Advanced Usage & Tips
 
-# Upload folder (handles multipart automatically)
-hf upload my-org/my-model ./local_folder --message "initial upload"
+### Global Flags
+*   `--format json`: Produces machine-readable output for automation.
+*   `-q` / `--quiet`: Limits output to IDs only.
 
-# Upload with specific repo type
-hf upload username/my-dataset ./data/ --repo-type dataset
-
-
-### Search models/datasets
-bash
-hf search models --type text-classification
-hf search datasets emoji
-hf search models "text-classification" --limit 5
-hf search datasets "chinese" --limit 5
-hf hub search "text-classification" --author "distilbert"
-
-
-### Manage repos
-bash
-hf repo create username/my-model --type model
-hf repo ls
-hf ls username/model-name
-
-
-### Spaces & Inference Endpoints
-bash
-# Spaces
-hf space create username/my-space --sdk streamlit
-hf space replica username/my-space
-
-# Inference endpoints (requires Pro+ subscription)
-hf endpoint create --compute gpu --repo-id my-org/my-model
-hf endpoints create --repo-id meta-llama/Llama-3-8B-Instruct
-
-# Or via REST API
-curl -X POST "https://api.endpoints.huggingface.cloud/v2/endpoint" \
-  -H "Authorization: Bearer $HF_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "meta-llama/Llama-2-7b-hf", "compute": {"accelerator": "gpu", "instanceSize": "medium"}}'
-
-
-## Python API
-
-python
-from huggingface_hub import (
-    snapshot_download, upload_folder, upload_file,
-    HfApi, list_models, list_datasets
-)
-from datasets import load_dataset
-
-api = HfApi()  # reads HF_TOKEN from env by default
-
-# Upload file
-api.upload_file(
-    path_or_fileobj="./config.json",
-    path_in_repo="config.json",
-    repo_id="username/my-model",
-    repo_type="model",
-)
-
-# Upload folder
-api.upload_folder(
-    folder_path="./outputs",
-    repo_id="my-org/my-model",
-    repo_type="model",
-)
-
-# Download model snapshot (all files, cached)
-model_dir = snapshot_download("meta-llama/Llama-3.1-8B")
-print(model_dir)  # ~/.cache/huggingface/hub/models--meta-llama--Llama-3.1-8B
-
-# Download with token (private/gated models)
-model_dir = snapshot_download(
-    repo_id="meta-llama/Llama-2-7b-hf",
-    cache_dir="./models",
-    token=os.getenv("HF_TOKEN")
-)
-
-# Load model directly (downloads if needed)
-from transformers import AutoModel
-model = AutoModel.from_pretrained("meta-llama/Llama-2-7b-hf", token=os.getenv("HF_TOKEN"))
-
-# Search models
-results = api.list_models(task="text-classification", sort="downloads", direction=-1, limit=5)
-for model in results:
-    print(model.id, model.downloads)
-
-# Load dataset (standard)
-ds = load_dataset("philschmid/gpt-3.5-books", split="train")
-
-# Load dataset (streaming for large datasets)
-ds = load_dataset("philschmid/gpt-3.5-books", streaming=True, split="train")
-
-# Dataset with SQL
-ds = load_dataset("hf://datasets/lamini/lamini-docs", split="train")
-
-
-## Environment Variables
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `HF_TOKEN` | `~/.cache/huggingface/token` | Auth token for private repos |
-| `HF_HOME` | `~/.cache/huggingface/` | Cache location |
-| `HF_ENDPOINT` | `https://huggingface.co` | Override for enterprise/proxy |
-| `HF_HUB_ENABLE_HF_TRANSFER` | `0` | Set to `1` for faster transfers |
-
-**China region mirror:** `HF_ENDPOINT=https://hf-mirror.com`
-
-## Decision Tree
-
-1. **What is the target?** Model, dataset, Space, or repo?
-2. **Is it public or private?** Public → no token needed. Private/gated → requires `HF_TOKEN`.
-3. **Python or CLI?** Python (`huggingface_hub`) for scripts; CLI (`hf`) for quick one-liners.
-4. **For downloads:**
-   - Quick load: `from_pretrained()` or `load_dataset()`
-   - Full directory: `snapshot_download()` or `hf hub snapshot-download`
-   - Single file: `hf hub download <model>/<file>`
-5. **For uploads:** Use `upload_folder()` or `hf upload` — requires `HF_TOKEN` with write permission.
-6. **For search:** Use `list_models()` / `list_datasets()` with filters, or `hf search`.
-7. **For dataset SQL:** Use `hfql` CLI or `load_dataset("hf://datasets/<repo_id>", sql=...)`.
-8. **For large datasets:** Use streaming (`load_dataset(..., streaming=True)`).
-
-## Edge Cases
-
-| Situation | Solution |
-|-----------|----------|
-| Large model (50GB+) | Use `hf download --resume`; check disk space first |
-| Gated model (Llama, StarCoder, etc.) | Set `HF_TOKEN`; run `hf login` first; accept terms at huggingface.co |
-| Rate limiting | Set `HF_ENDPOINT` to a mirror; add `HF_HUB_ENABLE_HF_TRANSFER=1` |
-| Network timeout | Use `--local-dir-use-symlinks False`; retry |
-| Network interruption during download | Use `resume_download=True` in `snapshot_download()` or `hf download --resume` |
-| Enterprise HF (hf.co/moon-enterprise) | Set `HF_ENDPOINT` env var to your enterprise URL |
-| China region SSL | Use `HF_ENDPOINT=https://hf-mirror.com` |
-| Partial download | Use `--resume` to continue; delete incomplete file first |
-| Duplicate downloads | `hf download` is idempotent; `snapshot_download` skips if cache exists |
-| Upload conflicts | Use `--create` flag or specify `repo_type` to avoid overwrite errors |
-| Very large models/datasets | Use streaming (`load_dataset(..., streaming=True)`) or `hf_hub_download` for individual files |
-| Model not loading (RAM/VRAM) | Use `from_pretrained(..., low_cpu_mem_usage=True)` or `device_map="auto"` |
-| `huggingface_hub` not installed | `pip install huggingface_hub` — same package provides CLI |
-
-## Quick Reference
-
-| Operation | CLI | Python |
-|-----------|-----|--------|
-| Search models | `hf search models <query>` | `list_models(search=...)` |
-| Search datasets | `hf search datasets <query>` | `list_datasets(search=...)` |
-| Download model | `hf download <repo_id>` | `snapshot_download()` |
-| Upload file | `hf upload <repo_id> <file>` | `api.upload_file()` |
-| Upload folder | `hf upload <repo_id> ./folder` | `api.upload_folder()` |
-| Create repo | `hf repo create <name> --type <type>` | `api.create_repo()` |
-| List repos | `hf ls` | `api.list_models()` / `list_datasets()` |
-| Download dataset | `hf download datasets/<id>` | `load_dataset()` |
-| Login | `hf login` | — |
-
-## Health Check
-
-bash
-# Verify hf CLI
-hf --version
-
-# Verify auth
-hf whoami
-
-# Verify Python package
-python3 -c "import huggingface_hub; print(huggingface_hub.__version__)"
-
-# Check token is readable
-cat ~/.cache/huggingface/token 2>/dev/null || echo "No token cached"
-
+### Extensions & Skills
+*   **Extensions:** Extend CLI functionality via GitHub repositories using `hf extensions install REPO_ID`.
+*   **Skills:** Manage AI assistant skills with `hf skills add`.
