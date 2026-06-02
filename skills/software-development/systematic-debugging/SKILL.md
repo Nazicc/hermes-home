@@ -247,7 +247,37 @@ write_file("/path/to/file", "new content")
 5. **Blind restart** — Restarting services as a debugging technique. It clears state and loses evidence. Observe first, restart as a targeted test only.
 6. **API-stability assumption** — Assuming third-party APIs return the same shape. They change. Check the actual contract in logs or test calls.
 7. **Stale-state blindspot** — Assuming cached or environment data is fresh. Scripts read from previous runs, config files are stale, environment variables are wrong. Verify.
-8. **macOS-cp-alias trap** — Using bare `cp source dest` on macOS. It's aliased to `cp -i` and hangs on confirmation. Always use `/bin/cp -f`.
+9. **macOS-cp-alias trap** — Using bare `cp source dest` on macOS. It's aliased to `cp -i` and hangs on confirmation. Always use `/bin/cp -f`.
+
+10. **Suspiciously-fast-completion trap** — When a command that should take time (nmap scan of a /24 subnet, masscan sweep, file download) completes instantly or orders of magnitude faster than expected, it is almost always a **silent failure**: arguments never reached the tool, the tool failed immediately, or an error was swallowed. Do NOT interpret fast completion as "no results found."
+
+    **Common root causes for scan tools:**
+    - Space-joined CIDR strings passed as a single argument to nmap (e.g., `nmap -p 3333 "172.16.2.0/24 10.1.0.0/24"`). Nmap sees one bogus target and fails silently.
+    - Empty target lists passed to the command (variable was `None` or empty string)
+    - Tool not found or wrong path, but stderr not checked
+    - `-Pn` not applied, nmap pings first and all hosts appear offline (happens on internal networks)
+
+    **How to diagnose:**
+    ```bash
+    # 1. Check the actual command being constructed: print/regex the argument string
+    # 2. Run the command manually with bash -x to see the expanded arguments
+    bash -x nmap -p 3333 172.16.2.0/24 10.1.0.0/24 2>&1
+    # 3. Check exit code of the underlying tool
+    # 4. Check if args are being split correctly when built from Python lists as strings
+    ```
+
+    **The fix:** When building command strings from multiple dynamic targets, split space-joined strings back into individual arguments before passing to the subprocess. In Python:
+    ```python
+    # WRONG — passed as single argument
+    targets = "172.16.2.0/24 10.1.0.0/24"
+    run_cmd(f"nmap {targets}")  # nmap sees one bogus "172.16.2.0/24 10.1.0.0/24"
+    # RIGHT — expand as separate arguments
+    run_cmd(f"nmap {' '.join(targets.split())}")  # split and rejoin
+    # or use subprocess with a list (no shell=True)
+    subprocess.run(["nmap", *targets.split()])
+    ```
+
+    **Real-world story:** A miner-detection nmap scan of 2 /24 subnets completed in 1 second. `detect_network()` returned `"172.16.2.0/24 10.1.0.0/24"` (one string), and `nmap_scan()` passed it directly: `nmap -p 3333,4444,... "172.16.2.0/24 10.1.0.0/24"`. Nmap failed immediately, reporting zero hosts scanned. Fix: `for subnet in args.subnets.split():` and pass each CIDR as a separate argument. (See `references/miner-fast-scan-debug.md`)
 
 ## When NOT to Use
 

@@ -114,6 +114,8 @@ launchd/launchd/
 sessions/
 # ═══ Skill auto-tracking ═══
 skills/.usage.json
+# ═══ Runtime/untracked plugin dirs ═══
+plugins/memory/memory_tencentdb/
 sessions.db
 simplemem_evolution/
 sirchmunk-data/
