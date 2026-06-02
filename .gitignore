@@ -112,6 +112,8 @@ hermes-agent/
 launchd/com.hermes.deerflow-mcp.plist.disabled
 launchd/launchd/
 sessions/
+# ═══ Skill auto-tracking ═══
+skills/.usage.json
 sessions.db
 simplemem_evolution/
 sirchmunk-data/

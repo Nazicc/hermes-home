@@ -1,224 +1,120 @@
 ---
 name: mem-search
-description: "Three-layer memory search protocol for SimpleMem/MemPalace. Step 1: semantic index search → Step 2: timeline context → Step 3: fetch full entries. Covers session_search (long-term), search_memories (vector), sirchmunk (local files), and AMP-typed memories. Saves tokens by filtering before fetching full details. Trigger: user asks to search memory, find past sessions, recall previous work, look up a decision, check what was tried before, or query the agent's long-term memory. NOT for: current conversation context, filesystem search, or real-time web search."
-category: general
+description: "Three-layer memory search protocol for SimpleMem/MemPalace. Step 1: semantic index search → Step 2: timeline context → Step 3: fetch full entries. Covers session_search (long-term), search_memories (vector), sirchmunk (local files), and AMP-typed memories."
+category: productivity
+triggers: [search memory, find past sessions, recall previous work, look up a decision, check what was tried before, query memory, what did I learn, long-term memory, memory recall, remember, browse memory]
+anti_triggers: [filesystem search, web search, current conversation, cache lookup, temporary note]
+quality_redlines: ["Layer 1 (search) called first before Layer 3 (ask/get)", "AMP type filter used when known", "Session ID recorded before closing for future retrieval", "Results verified against actual memory store"]
 ---
 
-## Three-Layer Memory Search Protocol
+# mem-search
 
-Use this skill whenever a user asks to search memory, find past sessions, recall previous work, look up a decision, check what was tried before, or query the agent's long-term memory system.
-
-> **Token-saving rule**: Never fetch full session details before Layer 1 narrows the scope. Session files can be 50KB+.
-
----
-
-## Layer 1 — Semantic Index Search
-
-Always start here. Query the vector/keyword index to find candidate entries.
-
-### Primary: `search_memories`
-
-python
-search_memories(query="<search terms>", top_k=5)
-
-
-Returns ranked entry IDs + relevance scores. Use for natural-language queries.
-
-### Secondary: `session_search`
-
-python
-session_search(query="<search terms>", limit=10)
-
-
-Search across all historical sessions by keyword/timeline. Returns session IDs + snippets.
-
-**Query construction**:
-- Be specific: include project names, dates, tool names, or error messages
-- For decisions: `"decision about X architecture"` or `"chose Y over Z"`
-- For work: `"implemented feature X"` or `"debugged Y issue"`
-- For lessons: `"learned that X causes Y"` or `"found workaround for Z"`
-
-**Examples**:
-- `"python fastmcp server debugging timeout"` → debug sessions
-- `"decided to use pgvector over qdrant"` → architecture decisions
-- `"hermes-agent skill evolution mem-search"` → skill's own development
-
-**If Layer 1 returns nothing**: Try broader terms, synonyms, or date range queries.
-
-**Skip to Layer 2**: When Layer 1 returns candidate session IDs.
+Three-layer memory search protocol for discovering past sessions, decisions, and patterns via SimpleMem. Saves tokens by filtering before fetching full detail.
 
 ---
 
-## Layer 2 — Timeline Context
+## Purpose
 
-If Layer 1 returns candidate session IDs, fetch timeline context to understand scope.
-
-### Tool: `get_session`
-
-python
-get_session(session_id="<id from Layer 1>")
-
-
-Returns session metadata: timestamp, duration, topic summary, key operations, outcome.
-
-### Tool: `list_sessions`
-
-python
-list_sessions(limit=20, type_filter=None)
-
-
-List recent sessions to find the right time window. Useful when Layer 1 fails.
-
-**When to skip Layer 2**: If Layer 1 returns a single high-confidence match (score > 0.85), go directly to Layer 3.
+Use this skill when the user asks to search memory, find past sessions, recall previous work, look up a decision, check what was tried before, or query the agent's long-term memory. The three-layer protocol (semantic → timeline → full detail) ensures you retrieve relevant information without wasting context on irrelevant results.
 
 ---
 
-## Layer 3 — Full Entry Fetch
+## Why This Works
 
-Only after identifying the right session, fetch specific entries.
+**1. The pyramid principle saves tokens.** Most queries match only a few relevant entries. Starting with a fast vector search (Layer 1) against the full index costs less than 10% of the tokens needed to load every entry's full text. You throw away 90% of irrelevant results before spending tokens on detail.
 
-### Tool: `ask`
+**2. Timeline ordering reveals causality.** Vector search returns by semantic similarity, which can miss the temporal relationship between entries. Layer 2 sorts results chronologically, letting you see cause and effect — the fix that followed the bug, the decision that followed the research.
 
-python
-ask(query="<specific question>", entry_ids=["<id1>", "<id2>"], mode="auto")
+**3. Type-aware filtering improves precision.** The AMP taxonomy (assessments, memories, procedures) lets you narrow search to the kind of information you need. Searching memory_type=error finds only failure patterns, not all the notes that mention an error in passing.
 
-
-Synthesizes answers from given entries. Best for specific factual recall.
-
-### Tool: `search_typed_memories` (AMP protocol)
-
-python
-search_typed_memories(query="<question>", memory_type="<type>", limit=10)
-
-
-For type-filtered retrieval of AMP-typed memories.
-
-### Tool: `sirchmunk` (offline fallback)
-
-bash
-sirchmunk query="<search>" path="~/.simplemem/exports/" limit=20
-
-
-Search local memory export files. Use when MCP server is down or for bulk analysis.
+**4. Layered escalation avoids false negatives.** A query might fail at Layer 1 if the vector embedding doesn't capture the right semantics (e.g., synonyms or framing differences). Layer 2 uses different queries or broader search to catch what Layer 1 missed. Layer 3 loads full entries for manual scanning.
 
 ---
 
-## AMP Typed Memory System
+## Anti-Patterns
 
-SimpleMem supports typed memory entries for structured recall.
+1. **Skipping Layer 1** — Jumping directly to ask() or reading memory export files wastes context on irrelevant sessions. Always start with search_memories or session_search at Layer 1, even if the query seems precise.
 
-### Entry Types
+2. **Session Search on Active Session** — session_search works on closed (committed) sessions only. For the current conversation, use direct context or in-session variables. Calling it on an active session returns stale or empty results.
 
-| Type | Use For |
-|------|---------|
-| `lesson` | Pattern or insight to remember |
-| `decision` | Architectural or design choice with rationale |
-| `context` | Background information for future sessions |
-| `observation` | Noted behavior or fact |
-| `error` | Known bug or failure mode |
-| `reference` | Documentation or external resource |
-| `checkpoint` | Milestone or state marker |
-| `reflection` | Post-mortem or review note |
-| `preference` | User/system preference |
-| `fact` | Verified factual information |
-| `procedure` | How-to or step sequence |
+3. **Overusing observation Type** — The AMP taxonomy exists so you can query by type (memory_type=error). Defaulting to observation for every entry destroys this capability. Choose the most specific type — lesson for patterns, decision for rationale, error for bugs, procedure for workflows.
 
-### Tools
+4. **Over-fetching Results** — Start with top_k=5. Large values on search_memories return low-relevance entries that dilute results. Increase only when the first batch returns nothing useful.
 
-**Store a typed memory:**
-python
-store_typed_memory(content="<text>", memory_type="<type>", tags=["<tag1>"], session_id=None)
+5. **No Tag Filtering** — Tags provide a lightweight grouping mechanism. Searching without tags when you know the relevant category returns extra noise. Combine semantic search with tag filters for precision.
 
+6. **Forgetting to Record Key Findings** — If you find useful information through the search protocol but don't record it as a new memory (lesson/decision), you'll need to re-search later. Record what you find.
 
-**Search by type:**
-python
-search_typed_memories(query="<search>", memory_type="<type>", limit=10)
+7. **Assuming Sirchmunk Replaces SimpleMem** — sirchmunk searches local files, not memory databases. For simple scripts and raw data, use sirchmunk. For structured memory with AMP taxonomy, use SimpleMem MCP tools.
 
-
-**Check system status:**
-python
-memory_status()
-
-Returns memory counts by type and storage backend health.
-
-**List available types:**
-python
-list_memory_types()
-
+8. **Chaining Too Deeply** — Following every potential lead recursively creates exponential blowup. After 2-3 hops without finding the answer, backtrack to Layer 1 with a refined query.
 
 ---
 
-## Quick Reference
+## Examples
 
-| Need | Tool | Layer |
-|------|------|-------|
-| Natural language search | `search_memories` | L1 |
-| Keyword/timeline search | `session_search` | L1 |
-| Session metadata | `get_session` | L2 |
-| Recent sessions list | `list_sessions` | L2 |
-| Specific factual recall | `ask` | L3 |
-| Local export search | `sirchmunk` | L3 |
-| Store typed memory | `store_typed_memory` | — |
-| Search typed memories | `search_typed_memories` | — |
-| Check memory health | `memory_status` | — |
-| List memory types | `list_memory_types` | — |
-| Current session | — | Already in context window |
+**Good:** Recalling a past architectural decision using the three-layer protocol.
 
----
+```
+user: "Why did we choose pgvector over Qdrant?"
+agent: Layer 1: session_search("chose pgvector over qdrant")
+       Layer 2: get_session(session_id="sess_abc")
+       Layer 3: ask("What was the rationale for choosing pgvector?")
+# → "We chose pgvector because it integrates with our existing PostgreSQL instance, avoiding a separate vector DB infrastructure."
+```
 
-## Common Patterns
+**Good:** Remembering a workaround found in a past debugging session.
 
-### Pattern 1: Recalling a Past Decision
-1. Layer 1: `session_search("chose X over Y")`
-2. Layer 2: `get_session(session_id)` to confirm scope
-3. Layer 3: `ask("What was the rationale for choosing X?")`
+```
+user: "What was that workaround for the FastMCP timeout issue?"
+agent: Layer 1: search_typed_memories("fastmcp timeout workaround", memory_type="lesson", limit=5)
+       Layer 3 (skip L2 — high score): ask("What was the workaround for FastMCP timeout?")
+# → "We increased the timeout parameter in MCP server config from 30s to 120s"
+```
 
-### Pattern 2: Finding a Past Workaround
-1. Layer 1: `session_search("error X workaround")`
-2. Layer 2: Confirm session scope
-3. Layer 3: `search_typed_memories("workaround for error X", type="error")`
+**Good:** Checking what was already tried when a previous approach failed.
 
-### Pattern 3: Checking What Was Already Tried
-1. Layer 1: `session_search("tried X approach for project Y")`
-2. Layer 2: Timeline to see chronological attempts
-3. Layer 3: Fetch specific entries about X approach
+```
+user: "Did we already try deploying with Docker Compose?"
+agent: Layer 1: session_search("docker compose deployment")
+       Layer 2: get_session(session_id="sess_xyz")
+       Layer 3: ask("What Docker Compose approach was tried and why did it fail?")
+# → "Yes, Docker Compose was tried but failed because the PostgreSQL healthcheck timeout was too short."
+```
 
-### Pattern 4: Remembering a Lesson
-1. Layer 1: `search_typed_memories("python fastmcp", type="lesson")`
-2. Layer 3: Directly retrieve typed memories by type filter
+**Bad:** Jumping directly to full entry fetch without narrowing scope.
 
----
+```
+user: "Find that thing about authentication"
+agent: ask(query="What about authentication?", entry_ids=[])
+# → Error: entry_ids required. Must call search_memories or session_search first.
+```
 
-## Error Handling
+**Bad:** Using the wrong layer for the wrong data source.
 
-| Error | Fallback |
-|-------|----------|
-| MCP client closed / `search_memories` connection error | Use `sirchmunk` on local exports at `~/.simplemem/exports/` |
-| No results from `search_memories` | Try `session_search` with broader terms, then `list_sessions` |
-| `ask` returns no answer | Verify entry IDs (Layer 2), then try direct `read_file` on export files |
-| `memory_status` shows unhealthy | Check SimpleMem service is running; use `sirchmunk` as offline fallback |
-| Session ID not found | Session may have been garbage-collected; retry Layer 1 with different terms |
-| Too many results | Increase `top_k` or add more specific search terms |
+```
+user: "What was the port number in the Docker Compose file?"
+agent: session_search("docker compose port")
+       # → No results (because it's in a local file, not in SimpleMem)
+# → Better: Use sirchmunk to search the actual compose file on disk.
+```
 
 ---
 
-## Quality Redlines
+## When NOT to Use
 
-- Verify MCP tools are loaded before use (simplemem MCP must be connected)
-- `session_search` works on closed sessions; for active session use direct context
-- Always search index first (Layer 1), only fetch full on relevance (Layer 3)
-- Do not use `search_memories` as a replacement for `read_file` — memory is for past conversations, not current files
-- Do not call `ask` before Layer 1 narrows scope — you need entry IDs first
-- Do not skip Layer 2 when you have session IDs — timeline context prevents hallucinating details from the wrong session
-- Do not over-fetch — start with `top_k=5`, increase only if needed
-- Do not store everything as `observation` — use the AMP taxonomy to enable type-filtered retrieval
+- **For the current conversation context** — Already in the context window; use direct context rather than memory search.
+- **For filesystem search** — Use sirchmunk, read_file, search_files, or terminal find/grep for local file content.
+- **For real-time web search** — Use web search tools (duckduckgo-search, browser harness) for current information.
+- **When memory MCP server is down and no export fallback exists** — Report the issue rather than hallucinating from stale data.
+- **For ephemeral lookups** — If you only need to check something once, use direct context, not memory search.
 
 ---
 
-## Anti-Triggers
+## Cross-References
 
-- **Current conversation context** → Already in context window; use direct context
-- **File content search** → Use `read_file` or terminal with `find`/`grep`
-- **Filesystem search** → Use terminal with `find`/`grep`
-- **Real-time web search** → Use duckduckgo-search or similar
-- **Fresh context needed** → Rely on current session, not memory
+- **simplemem-integration** (skills/simplemem-integration/SKILL.md) — Build a custom FastMCP server that wraps SimpleMem for programmatic memory access.
+- **simplemem-local-embedding** (skills/simplemem-local-embedding/SKILL.md) — Configure SimpleMem with a local embedding model to bypass external API calls.
+- **simplemem-mcp** (skills/simplemem-mcp/SKILL.md) — Trade-offs, failure modes, and best practices for the SimpleMem MCP server.
+- **amp-typed-memory** (skills/amp-typed-memory/SKILL.md) — Typed memory (lesson/checkpoint/reflection) for SimpleMem with the full AMP taxonomy.
+- **hindsight** (skills/hindsight/SKILL.md) — Graph-based memory reasoning system that complements SimpleMem's vector search.
