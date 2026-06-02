@@ -161,7 +161,63 @@ The bridge's `--full-sync` flag syncs *all* sessions every time. Over time, with
 - [systematic-debugging](/skills/debugging/systematic-debugging/SKILL.md) — Debugging methodology: hypothesis → isolate → fix → verify
 - [native-mcp](/skills/mcp/native-mcp/SKILL.md) — Register MCP servers in Hermes config.yaml
 - [deerflow-hermes-integration](/skills/deerflow-hermes-integration/SKILL.md) — Alternative multi-agent integration with DeerFlow
-- [hermes-agent-architecture](/skills/software-development/hermes-agent-architecture/SKILL.md) — Hermes Agent project architecture
+- [hermes-agent-architecture](/skills/software-development/hermes-agent-architecture/SKILL.md) — Hermes Agent project architecture (includes hook system, evolution layer gap analysis)
+- [references/evolution-recorder-bridge.md](references/evolution-recorder-bridge.md) — Design doc for the evolution-recorder plugin that bridges runtime → evolution pipeline
+
+---
+
+## Runtime Data Capture Gap (June 2026 Deep-Dive)
+
+The existing architecture covers **Step 3** (Evolver → SimpleMem, missing). But the deeper gap is **data ingress** — there is no mechanism at all for real agent execution data to enter the evolution system.
+
+### Three Disconnected Layers
+
+```
+Layer 1: Plugin System (15 hooks, hermes_cli/plugins.py)
+  post_tool_call fires at model_tools.py:996
+  on_session_end fires at conversation_loop.py:~L700+
+  Both fire — but ZERO plugins listen for evolution data
+         ↓
+Layer 2: SimpleMem Evolution (simplemem_evolution/evolution.db)
+  530 records, ALL synthetic — none from actual runtime
+  No mechanism to ingest tool execution or session data
+         ↓
+Layer 3: Evolution Pipeline (hermes-agent-self-evolution/)
+  dataset_builder.py:BuildFromSessionDB() = pass (STUB)
+  GEPA only sees synthetic data → limited improvement signal
+```
+
+### Where the fix goes
+
+The **evolution-recorder plugin** (detailed design in `references/evolution-recorder-bridge.md`) bridges Layer 1 → Layer 2 by:
+
+1. Registering `post_tool_call` → captures tool_name, args, result, exit_code → writes to `simplemem_evolution/evolution.db` via direct SQLite INSERT (zero MCP overhead on hot path)
+2. Registering `on_session_end` → captures session metrics → writes to evolution.db
+3. Caching to file directory for evolver pipeline consumption
+
+**Key constraint**: `post_tool_call` is synchronous on the hot path. MCP roundtrips would add 100-500ms per tool call. Direct SQLite INSERT is the only viable approach — same pattern as the existing `evolution_remember` implementation.
+
+### Status Summary
+
+| Layer | Component | Status |
+|-------|-----------|--------|
+| Layer 1 | `post_tool_call` hook wiring in model_tools.py | ✅ Fires at runtime |
+| Layer 1 | evolution-recorder plugin | ❌ Not created |
+| Layer 2 | SimpleMem evolution.db schema | ✅ Exists |
+| Layer 2 | Runtime data ingestion | ❌ No mechanism |
+| Layer 3 | dataset_builder synthetic source | ✅ Working |
+| Layer 3 | dataset_builder gold source | ✅ Working |
+| Layer 3 | dataset_builder sessiondb source | ❌ STUB (`pass`) |
+| Pipeline | GEPA optimizer cycles | ✅ Working |
+| Pipeline | Evolution results → skills deployment | ❌ Not implemented |
+
+### Implementation Priority
+
+1. ✅ Create evolution-recorder plugin (handles Layers 1→2 bridge)
+2. ✅ Implement BuildFromSessionDB in dataset_builder (handles Layers 2→3 bridge)
+3. ✅ Wire approved capsules → skill updates (closes the loop)
+
+Each step is independently testable with synthetic data before connecting to the next layer.
 
 ---
 

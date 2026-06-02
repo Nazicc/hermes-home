@@ -160,6 +160,43 @@ git branch recovery-branch <commit-hash>
 git checkout <commit-hash>
 ```
 
+### Branch Divergence: Files missing on current branch (exist in git history)
+
+**Scenario**: A package directory exists on `main` but is empty because the actual files were committed on a different branch (e.g., `main-backup`). `python -m <package>` fails with "No module named <package>.\_\_main\_\_; '<package>' is a package and cannot be directly executed" because the `__main__.py` and other files are missing.
+
+**Diagnosis:**
+
+```bash
+# Find when/where the files were added (search ALL branches)
+cd ~/.hermes/hermes-agent
+git log --all --diff-filter=A -- hermes_af/__init__.py
+
+# Broader search — any commits touching this path
+git log --all --oneline -- hermes_af/
+```
+
+**Fix: Restore files from the commit onto current branch**
+
+```bash
+# Checkout the files from the commit onto your current branch
+# This stages them without switching branches
+git checkout 0ff488699  -- hermes_af/
+
+# Verify files are restored
+ls -la hermes_af/
+python3 -m hermes_af export --help  # test the module works
+
+# Commit the restored files to make them permanent
+git add hermes_af/
+git commit -m "chore: restore hermes_af module from commit 0ff488699"
+```
+
+**How it works**: `git checkout <commit> -- <path>` copies files from that commit into the current working tree and staging area. It does NOT switch branches — it's a file-level restore from any point in history.
+
+**Pitfall: `git log --all` is essential**. If you only run `git log` (without `--all`), you only see commits reachable from the current HEAD. Files on other branches are invisible. Always use `--all` when searching for "did this file ever exist."
+
+**Pitfall: empty directory vs missing files**. Git does not track empty directories. If a directory exists but is empty, git considers those files absent from the tracked tree. `git log -- <dir>/` shows nothing because no files were committed there — the empty directory is just a shell artifact. Always check for files inside the directory, not the directory itself.
+
 ### Recovering from a cluttered stash
 
 ```bash

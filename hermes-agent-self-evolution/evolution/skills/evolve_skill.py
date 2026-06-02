@@ -299,14 +299,33 @@ def evolve(
     }
     (output_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
 
-    console.print(f"\n  Output saved to {output_dir}/")
+    console.print(f"  Output saved to {output_dir}/")
 
+    # ── 11. Auto-deploy to original skill ────────────────────────────────
     if improvement > 0:
-        console.print(f"\n[bold green]✓ Evolution improved skill by {improvement:+.3f} ({improvement/max(0.001, avg_baseline)*100:+.1f}%)[/bold green]")
-        console.print(f"  Review the diff: diff {output_dir}/baseline_skill.md {output_dir}/evolved_skill.md")
+        console.print(f"\n[bold]Deploying evolved skill to original location[/bold]")
+        try:
+            # Backup original
+            backup_path = Path("output") / skill_name / timestamp / "_original_backup.md"
+            backup_path.parent.mkdir(parents=True, exist_ok=True)
+            backup_path.write_text(skill["raw"])
+            console.print(f"  Backup: {backup_path}")
+
+            # Deploy evolved skill to skill_path
+            skill_path.write_text(evolved_full)
+            console.print(f"  [bold green]✓ Deployed to {skill_path}[/bold green]")
+            metrics["deployed"] = True
+        except Exception as e:
+            console.print(f"[red]✗ Auto-deploy failed: {e}[/red]")
+            console.print(f"  Evolved skill saved at {output_dir / 'evolved_skill.md'}")
+            console.print(f"  Deploy manually: cp {output_dir / 'evolved_skill.md'} {skill_path}")
+            metrics["deployed"] = False
     else:
-        console.print(f"\n[yellow]⚠ Evolution did not improve skill (change: {improvement:+.3f})[/yellow]")
-        console.print("  Try: more iterations, better eval dataset, or different optimizer model")
+        console.print(f"\n[yellow]⚠ Skill did not improve — not deploying[/yellow]")
+        console.print(f"  Evolved variant saved at {output_dir}/evolved_skill.md")
+        metrics["deployed"] = False
+
+
 
 
 @click.command()

@@ -115,18 +115,120 @@ Session JSON files only contain message text. Token counts, end_reason, tool_cal
 hermes-agent/
 ├── cli.py                  # CLI entry point, HermesCLI class
 ├── run_agent.py            # Agent runtime core, AIAgent class
+├── model_tools.py          # Tool orchestration — post_tool_call hook fires here (~L996)
+├── toolsets.py             # Toolset definitions, _HERMES_CORE_TOOLS
+├── hermes_state.py         # SessionDB — SQLite session store (FTS5)
 ├── gateway/                # Gateway server (HTTP API + MCP client)
-│   └── run.py              # Gateway HTTP server
+│   ├── run.py              # Gateway HTTP server
+│   ├── session.py          # SessionStore — conversation persistence
+│   └── platforms/          # Adapters: telegram, discord, slack, whatsapp, ...
 ├── agent/
-│   └── skill_commands.py   # /skill-name command routing
+│   ├── conversation_loop.py  # Main agent loop — on_session_end, compression logic
+│   ├── tool_executor.py      # Tool dispatch and execution isolation
+│   ├── tool_dispatch_helpers.py # Tool result message formatting
+│   ├── skill_commands.py     # /skill-name command routing
+│   ├── prompt_builder.py     # System prompt assembly
+│   ├── context_compressor.py # Auto context compaction
+│   └── prompt_caching.py     # Anthropic prompt caching
+├── hermes_cli/
+│   └── plugins.py          # Plugin system — PluginContext, 15 hooks, register/invoke
 ├── tools/
-│   └── skills_tool.py      # SKILL.md parsing + tool registration
+│   ├── registry.py          # Central tool registry (schemas, handlers, dispatch)
+│   ├── mcp_tool.py          # MCP client (~1050 lines)
+│   └── ...                  # terminal_tool.py, file_tools.py, web_tools.py, etc.
+├── plugins/                 # Installed plugins (disk-cleanup, observability/langfuse)
+│   ├── disk-cleanup/
+│   │   ├── plugin.yaml     # Plugin manifest (name, hooks, schedule)
+│   │   └── __init__.py     # Pre/post tool call hooks
+│   └── observability/
+│       └── langfuse/
+│           └── __init__.py
 ├── cron/
 │   └── scheduler.py        # Scheduled task dispatcher
 ├── mcp-servers/            # MCP server implementations (git-tracked)
 ├── skills/                 # Built-in skills
-└── tests/                 # Test suite
+├── tests/                  # Pytest suite
+├── ui-tui/                 # Ink (React) terminal UI
+├── tui_gateway/            # Python JSON-RPC backend for TUI
+├── acp_adapter/            # ACP server for VS Code/Zed/JetBrains
+└── environments/           # RL training environments (Atropos)
 
+
+## Plugin System Architecture (hermes_cli/plugins.py)
+
+The plugin system provides **15 lifecycle hooks** that plugins can register for. This is the runtime bridge between real agent execution and the self-evolution pipeline — **no plugin currently connects them**, which is the critical gap.
+
+### Key Classes
+
+- **`PluginContext`** (line 286) — per-plugin context: name, config, enabled/disabled, hook registrations
+- **`PluginManager`** (line 1007) — singleton: discovers plugins from `plugins/` dirs, registers handlers, invokes hooks
+
+### Available Hooks (15 total)
+
+| Hook | Trigger Point | Current Registrants |
+|------|---------------|---------------------|
+| `on_startup` | Agent initialization | disk-cleanup (start periodic sweep) |
+| `on_shutdown` | Agent shutdown | disk-cleanup (stop timer) |
+| `pre_tool_call` | Before each tool invocation | disk-cleanup (check disk space) |
+| `post_tool_call` | After each tool result received | **None** ← evolution gap |
+| `on_session_start` | New conversation begins | langfuse observability |
+| `on_session_end` | Conversation finishes | langfuse observability |
+| `message_interceptor` | Between model response & rendering | langfuse |
+| `on_error` | Unhandled exception | None |
+| `config_updated` | Config file changes | None |
+| `on_model_change` | Model switch | None |
+| `on_tool_result` | Tool execution completed | None |
+| `before_send` | Before message sent to platform | None |
+| `after_send` | After message sent to platform | None |
+| `on_compression` | Context compression triggered | None |
+| `on_cron_tick` | Cron job tick | None |
+
+### Hook Registration Pattern
+
+```python
+register_hook(plugin_name, hook_name, priority, handler_func)
+# Priority: lower = runs first (100 = normal)
+# Invocation: invoke_hook(name, *args, **kwargs) → sorted handlers called
+```
+
+### Where Hooks Fire (Hardcoded)
+
+- **`post_tool_call`** — `model_tools.py:~L996`, inside `handle_function_call()`, right after tool returns
+- **`on_session_end`** — `agent/conversation_loop.py`, session closure section (~L700+)
+- **`pre_tool_call`** — `agent/tool_executor.py`, before tool dispatch
+- **`message_interceptor`** — after model response, before user delivery
+
+### Plugin Discovery
+
+1. `~/.hermes/hermes-agent/plugins/` — repo-tracked first-party plugins  
+2. `~/.hermes/plugins/` — user-installed plugins
+
+Each plugin: `plugin.yaml` (manifest) + `__init__.py` (handlers)
+
+### Self-Evolution 3-Layer Gap
+
+```
+Layer 1: Plugin System (runtime hook firing)
+    ↓ post_tool_call fires but NO plugin captures data
+Layer 2: SimpleMem Evolution (~/.hermes/simplemem_evolution/evolution.db)
+    ↓ 530 records exist, all synthetic — none from runtime capture
+Layer 3: Evolution Pipeline (~/.hermes/hermes-agent-self-evolution/)
+    ↓ dataset_builder.py:BuildFromSessionDB() is a STUB
+[GAP] Nothing connects Layer 1 → Layer 2 → Layer 3
+```
+
+**Key gaps (June 2026 deep-dive):**
+1. `post_tool_call` fires at `model_tools.py:996` but **zero plugins register** for it
+2. `on_session_end` fires but only langfuse observes — no evolution-recorder exists
+3. `dataset_builder.py` defines 3 sources (synthetic, gold, sessiondb), but `sessiondb` = `pass` stub
+4. `evolution.db` at root is empty; `simplemem_evolution/evolution.db` has 530 entries, none from runtime
+
+**Bridge design** (not yet implemented): `evolution-recorder` plugin should:
+1. Register `post_tool_call` → extract tool_name, args, result, exit_code → write to SimpleMem
+2. Register `on_session_end` → compile session metrics → write to SimpleMem
+3. Enable sessiondb mining in `dataset_builder` → feed real data into GEPA optimizer
+
+---
 
 ## Architecture Diagram
 

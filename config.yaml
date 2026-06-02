@@ -428,7 +428,7 @@ mcp_servers:
     enabled: true
     env:
       SIMPLEMEM_DATA_DIR: /Users/can/.hermes/simplemem-data
-      SIMPLEMEM_EMBEDDING_MODEL: /Users/can/.hermes/sirchmunk-data/.cache/models/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+      SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY}
   simplemem_evolution:
     args:
     - /Users/can/.hermes/simplemem_evolution/simplemem_evolution_mcp.py

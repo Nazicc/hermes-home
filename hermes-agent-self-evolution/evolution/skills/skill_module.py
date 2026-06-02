@@ -56,35 +56,47 @@ def load_skill(skill_path: Path) -> dict:
 
 
 def find_skill(skill_name: str, hermes_agent_path: Path) -> Optional[Path]:
-    """Find a skill by name in the hermes-agent skills directory.
+    """Find a skill by name, searching both repo and user skill directories.
 
-    Searches recursively for a SKILL.md in a directory matching the skill name.
-    Uses os.walk (follows symlinks) instead of rglob (does not follow symlinks in Python 3.14+).
+    Priority:
+    1. hermes-agent/skills/<category>/<skill_name>/SKILL.md (repo)
+    2. ~/.hermes/skills/<category>/<skill_name>/SKILL.md (user)
+    3. Fuzzy match on frontmatter name field (both dirs)
+    Uses os.walk (follows symlinks) instead of rglob.
     """
     import os as _os
+    from pathlib import Path as _Path
 
-    skills_dir = hermes_agent_path / "skills"
-    if not skills_dir.exists():
-        return None
+    user_skills_dir = _Path.home() / ".hermes" / "skills"
 
-    # Direct match: skills/<category>/<skill_name>/SKILL.md
-    # Use os.walk with followlinks=True to handle symlinked skill dirs
-    for root, dirs, files in _os.walk(str(skills_dir), followlinks=True):
-        if "SKILL.md" in files:
-            parent_name = _os.path.basename(root)
-            if parent_name == skill_name:
-                return Path(root) / "SKILL.md"
+    search_roots = [hermes_agent_path / "skills"]
+    if user_skills_dir != hermes_agent_path / "skills" and user_skills_dir.exists():
+        search_roots.append(user_skills_dir)
 
-    # Fuzzy match: check the name field in frontmatter
-    for root, dirs, files in _os.walk(str(skills_dir), followlinks=True):
-        if "SKILL.md" in files:
-            skill_md = Path(root) / "SKILL.md"
-            try:
-                content = skill_md.read_text()[:500]
-                if f"name: {skill_name}" in content or f'name: "{skill_name}"' in content:
-                    return skill_md
-            except Exception:
-                continue
+    for skills_dir in search_roots:
+        if not skills_dir.exists():
+            continue
+
+        # Direct match: skills/<category>/<skill_name>/SKILL.md
+        for root, dirs, files in _os.walk(str(skills_dir), followlinks=True):
+            if "SKILL.md" in files:
+                parent_name = _os.path.basename(root)
+                if parent_name == skill_name:
+                    return _Path(root) / "SKILL.md"
+
+    # Fuzzy match: check the name field in frontmatter (both dirs)
+    for skills_dir in search_roots:
+        if not skills_dir.exists():
+            continue
+        for root, dirs, files in _os.walk(str(skills_dir), followlinks=True):
+            if "SKILL.md" in files:
+                skill_md = _Path(root) / "SKILL.md"
+                try:
+                    content = skill_md.read_text()[:500]
+                    if f"name: {skill_name}" in content or f'name: "{skill_name}"' in content:
+                        return skill_md
+                except Exception:
+                    continue
 
     return None
 

@@ -297,3 +297,4 @@ write_file("/path/to/file", "new content")
 - **hermes-agent-diagnostics** (skills/hermes-agent-diagnostics/SKILL.md) — For Hermes system-level issues, start here first.
 - **deerflow-commander** (skills/deerflow-commander/SKILL.md) — Delegate deep research on unfamiliar technologies during debugging.
 - **Skills quality scorer format** (references/skills-quality-scorer-format.md) — Reference for the skills-quality MCP server format requirements. Use when skill quality scores don't match expectations.
+- **Multi-layer API system regression** (references/multi-layer-api-regression.md) — Systematic protocol for testing multi-component HTTP-based systems end-to-end. Covers field contract verification, round-trip integrity testing, cross-contamination detection, background process checks, and a reusable Python test template. Use when any system has serially-dependent HTTP components, multiple memory layers, or API payload contracts that can drift.
