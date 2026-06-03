@@ -170,9 +170,9 @@ The plugin system provides **15 lifecycle hooks** that plugins can register for.
 | `on_startup` | Agent initialization | disk-cleanup (start periodic sweep) |
 | `on_shutdown` | Agent shutdown | disk-cleanup (stop timer) |
 | `pre_tool_call` | Before each tool invocation | disk-cleanup (check disk space) |
-| `post_tool_call` | After each tool result received | **None** ← evolution gap |
-| `on_session_start` | New conversation begins | langfuse observability |
-| `on_session_end` | Conversation finishes | langfuse observability |
+| `post_tool_call` | After each tool result received | evolution-recorder (captures runtime data for self-evolution) |
+| `on_session_start` | New conversation begins | langfuse observability, evolution-recorder (initialize per-turn tracking) |
+| `on_session_end` | Conversation finishes | langfuse observability, evolution-recorder (persist session summary to evolution.db) |
 | `message_interceptor` | Between model response & rendering | langfuse |
 | `on_error` | Unhandled exception | None |
 | `config_updated` | Config file changes | None |
@@ -205,28 +205,42 @@ register_hook(plugin_name, hook_name, priority, handler_func)
 
 Each plugin: `plugin.yaml` (manifest) + `__init__.py` (handlers)
 
-### Self-Evolution 3-Layer Gap
+### Self-Evolution 3-Layer Bridge (Implemented June 3, 2026)
 
-```
+```diff
 Layer 1: Plugin System (runtime hook firing)
-    ↓ post_tool_call fires but NO plugin captures data
+-    ↓ post_tool_call fires but NO plugin captures data
++    ↓ evolution-recorder captures tool data
 Layer 2: SimpleMem Evolution (~/.hermes/simplemem_evolution/evolution.db)
-    ↓ 530 records exist, all synthetic — none from runtime capture
+-    ↓ 530 records exist, all synthetic — none from runtime capture
++    ↓ 531+ records — runtime captures being written via EvolutionStore
 Layer 3: Evolution Pipeline (~/.hermes/hermes-agent-self-evolution/)
-    ↓ dataset_builder.py:BuildFromSessionDB() is a STUB
-[GAP] Nothing connects Layer 1 → Layer 2 → Layer 3
+-    ↓ dataset_builder.py:BuildFromSessionDB() is a STUB
++    → dataset_builder.py:BuildFromSessionDB() is still a STUB
 ```
 
-**Key gaps (June 2026 deep-dive):**
-1. `post_tool_call` fires at `model_tools.py:996` but **zero plugins register** for it
-2. `on_session_end` fires but only langfuse observes — no evolution-recorder exists
-3. `dataset_builder.py` defines 3 sources (synthetic, gold, sessiondb), but `sessiondb` = `pass` stub
-4. `evolution.db` at root is empty; `simplemem_evolution/evolution.db` has 530 entries, none from runtime
+**Status (June 3, 2026):**
+1. ✅ `evolution-recorder` plugin exists at `~/.hermes/hermes-agent/plugins/evolution-recorder/` — 3 files: `plugin.yaml`, `__init__.py`, `evolution_recorder.py`
+2. ✅ Registers `post_tool_call`, `on_session_start`, `on_session_end` hooks
+3. ✅ Writes tool executions and session summaries to `evolution.db` via `EvolutionStore.upsert()`
+4. ✅ Config-enabled via `hermes plugins enable evolution-recorder` (requires `chflags nouchg` first on macOS with immutable flag)
+5. ❌ `dataset_builder.py:BuildFromSessionDB()` is still a stub — evolution.db data cannot yet reach the GEPA optimizer
+6. ❌ No bridge from evolution.db → evolution training pipeline (Layer 2 → Layer 3 gap)
 
-**Bridge design** (not yet implemented): `evolution-recorder` plugin should:
-1. Register `post_tool_call` → extract tool_name, args, result, exit_code → write to SimpleMem
-2. Register `on_session_end` → compile session metrics → write to SimpleMem
-3. Enable sessiondb mining in `dataset_builder` → feed real data into GEPA optimizer
+**Design reference:** See `hermes-evolver-integration` skill for the full architecture mapping,
+or `references/evolution-recorder-bridge.md` for implementation details and verification procedure.
+
+### Config File Warning (macOS)
+
+`~/.hermes/config.yaml` may have the `uchg` (user immutable) flag on macOS:
+```bash
+ls -lO ~/.hermes/config.yaml     # Check: 'uchg' in flags column
+chflags nouchg ~/.hermes/config.yaml  # Remove flag to edit
+# ... make changes (e.g. hermes plugins enable foo) ...
+chflags uchg ~/.hermes/config.yaml    # Re-lock (optional)
+```
+This flag prevents `hermes plugins enable` and `hermes mcp add` from writing to config. Try those commands
+first — if they fail silently, check and remove the flag.
 
 ---
 

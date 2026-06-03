@@ -21,8 +21,9 @@ fi
 git commit -m "chore: auto-sync beads state" --quiet 2>/dev/null || true
 
 # Try to push — silently skip if network is down
-if git push origin upgrade-v0.13-2 2>/dev/null; then
-    echo "✅ beads state pushed to origin/upgrade-v0.13-2"
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+if git push origin "HEAD:$CURRENT_BRANCH" 2>/dev/null; then
+    echo "✅ beads state pushed to origin/$CURRENT_BRANCH"
 else
     echo "⚠️  push failed (network?) — changes saved locally"
     exit 0

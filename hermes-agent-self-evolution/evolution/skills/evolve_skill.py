@@ -66,7 +66,12 @@ def evolve(
         sys.exit(1)
 
     skill = load_skill(skill_path)
-    console.print(f"  Loaded: {skill_path.relative_to(config.hermes_agent_path)}")
+    try:
+        loaded_rel = skill_path.relative_to(config.hermes_agent_path)
+    except ValueError:
+        # Skill may be in ~/.hermes/skills/ (user dir) not in repo
+        loaded_rel = skill_path
+    console.print(f"  Loaded: {loaded_rel}")
     console.print(f"  Name: {skill['name']}")
     console.print(f"  Size: {len(skill['raw']):,} chars")
     console.print(f"  Description: {skill['description'][:80]}...")

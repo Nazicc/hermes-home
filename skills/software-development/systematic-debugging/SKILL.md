@@ -249,7 +249,17 @@ write_file("/path/to/file", "new content")
 7. **Stale-state blindspot** — Assuming cached or environment data is fresh. Scripts read from previous runs, config files are stale, environment variables are wrong. Verify.
 9. **macOS-cp-alias trap** — Using bare `cp source dest` on macOS. It's aliased to `cp -i` and hangs on confirmation. Always use `/bin/cp -f`.
 
-10. **Suspiciously-fast-completion trap** — When a command that should take time (nmap scan of a /24 subnet, masscan sweep, file download) completes instantly or orders of magnitude faster than expected, it is almost always a **silent failure**: arguments never reached the tool, the tool failed immediately, or an error was swallowed. Do NOT interpret fast completion as "no results found."
+10. **bash-set-u-with-unicode** — When using `set -euo pipefail` (or `set -u`), a variable followed by Unicode/CJK punctuation (fullwidth comma U+FF0C, Chinese period, etc.) triggers "unbound variable" errors. Bash treats `$STATUS，` as a single token because the wide punctuation is not recognized as a word boundary. Always use `${VAR}` (curly braces) when the context might contain non-ASCII characters. **Defensive rule**: always use `${VAR}` in bash scripts with `set -u`, regardless of what follows — it costs nothing and prevents this class of bug.
+
+    ```bash
+    # NOK — fails under set -u with CJK following
+    log "[$c] 状态=$STATUS，需要重建"   # Bash reads $STATUS， as a single token
+
+    # OK
+    log "[${c}] 状态=${STATUS}，需要重建"
+    ```
+
+11. **Suspiciously-fast-completion trap** — When a command that should take time (nmap scan of a /24 subnet, masscan sweep, file download) completes instantly or orders of magnitude faster than expected, it is almost always a **silent failure**: arguments never reached the tool, the tool failed immediately, or an error was swallowed. Do NOT interpret fast completion as "no results found."
 
     **Common root causes for scan tools:**
     - Space-joined CIDR strings passed as a single argument to nmap (e.g., `nmap -p 3333 "172.16.2.0/24 10.1.0.0/24"`). Nmap sees one bogus target and fails silently.
@@ -294,7 +304,9 @@ write_file("/path/to/file", "new content")
 - **spec-driven-development** (skills/spec-driven-development/SKILL.md) — If the bug reveals missing requirements, create a spec first.
 - **incremental-implementation** (skills/incremental-implementation/SKILL.md) — For complex multi-file fixes, use checkpoint comments.
 - **context-engineering** (skills/context-engineering/SKILL.md) — When debugging reveals context pollution, reset and re-observe.
-- **hermes-agent-diagnostics** (skills/hermes-agent-diagnostics/SKILL.md) — For Hermes system-level issues, start here first.
+- **hermes-agent-diagnostics** (hermes-agent/hermes-agent-diagnostics/SKILL.md) — For Hermes system-level issues, start here first.
 - **deerflow-commander** (skills/deerflow-commander/SKILL.md) — Delegate deep research on unfamiliar technologies during debugging.
 - **Skills quality scorer format** (references/skills-quality-scorer-format.md) — Reference for the skills-quality MCP server format requirements. Use when skill quality scores don't match expectations.
 - **Multi-layer API system regression** (references/multi-layer-api-regression.md) — Systematic protocol for testing multi-component HTTP-based systems end-to-end. Covers field contract verification, round-trip integrity testing, cross-contamination detection, background process checks, and a reusable Python test template. Use when any system has serially-dependent HTTP components, multiple memory layers, or API payload contracts that can drift.
+- **Docker Exited container diagnosis** (references/docker-exited-container-diagnosis.md) — Diagnosis workflow for containers that start and immediately exit. Covers empty-log syndrome (use `docker start` to trigger real-time errors), mount-point verification with `file`, and common error patterns including the "not a directory" bind-mount type mismatch. Use when any Docker container shows `Exited(N)` and `docker logs` is empty.
+- **Docker PostgreSQL auth crash** (references/docker-postgres-auth-crash.md) — Diagnosis workflow for containers that start successfully (`Up`) but crash because PostgreSQL authentication fails. Covers the crucial socket-vs-network auth test, identifying corrupted SCRAM-SHA-256 password hashes (valid-looking but broken), and the `ALTER USER ... WITH PASSWORD` fix. Use when application containers exit with `FATAL: password authentication failed` but the password string is correct.

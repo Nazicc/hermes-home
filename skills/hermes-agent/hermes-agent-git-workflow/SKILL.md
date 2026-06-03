@@ -266,6 +266,6 @@ Avoid `git push --force` on main branches. Use `git push --force-with-lease` as 
 
 ## Cross-References
 
-- **hermes-agent-diagnostics** (skills/hermes-agent-diagnostics/SKILL.md) — Broader hermes-agent runtime diagnostics including provider detection and tool loading issues.
+- **hermes-agent-diagnostics** (hermes-agent/hermes-agent-diagnostics/SKILL.md) — Broader hermes-agent runtime diagnostics including provider detection and tool loading issues.
 - **hermes-git-nested-repo** (skills/hermes-git-nested-repo/SKILL.md) — Deep dive on nested git repo awareness and context-switching between repos in the hermes workspace.
 - **hermes-agent-daily-maintenance** (skills/hermes-agent-daily-maintenance/SKILL.md) — Day-to-day operational commands for running, restarting, and monitoring hermes-agent processes.

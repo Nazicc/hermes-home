@@ -1,8 +1,12 @@
-|---
-|name: pokemon-player
-|description: "Use when playing Pokemon games autonomously via headless emulation. Starts a game server, reads structured game state from RAM, makes strategic decisions, and sends button inputs — all from the terminal. NOT for: non-Pokemon games, other game emulation, competitive online battles, real-time gaming, or when visual feedback is required."
-|category: general
-|---
+---
+name: pokemon-player
+description: "Use when playing Pokemon games autonomously via headless emulation. Starts a game server, reads structured game state from RAM, makes strategic decisions, and sends button inputs — all from the terminal. Also supports mGBA/DeSmuME/BizHawk emulators for GBA/NDS titles. NOT for: non-Pokemon games, competitive online battles, real-time gaming, or when visual feedback is required."
+category: gaming
+---
+
+# Pokémon Player — Emulator Automation and Game Scripting
+
+Automate Pokémon gameplay across Game Boy (pyboy), GBA (mGBA), NDS (DeSmuME), and multi-system (BizHawk) emulators. Read game state from memory, make strategic decisions, and send button inputs programmatically.
 
 ## Architecture
 
@@ -12,18 +16,46 @@
 - **strategy/** — decision engine (type advantages, move priority, HP thresholds)
 - **button_inputs/** — pre-built combo sequences (grinding, shiny hunting, etc.)
 
-## Use when
+## When to Use
 
-- Playing Pokemon games automatically
-- Training Pokemon for battle strategies
+- Playing Pokémon games automatically (Gen 1-5)
+- Training Pokémon for battle strategies
 - Completing in-game tasks and quests
-- Mass catching or farming Pokemon
-- Testing game logic and mechanics
-- Running Pokemon game automation on servers
+- Mass catching or farming Pokémon
+- Building AI agents that play Pokémon games
+- Scripting repetitive tasks (EV training, shiny hunting, egg hatching)
+- Analyzing game mechanics and data structures
 
-## Startup
+**Key features:**
+- **Emulator control**: Launch, pause, resume, and quit emulators
+- **Input automation**: Send button presses and sequences
+- **Memory reading**: Read RAM values for game state (HP, level, position)
+- **Lua scripting**: Write scripts that run inside the emulator
+- **Bot frameworks**: Pre-built patterns for common Pokémon tasks
 
-bash
+## Installation
+
+### pyboy (Gen 1/2 — headless game server)
+
+```bash
+pip install pyboy
+# Clone the repo with game-server.py and strategy engine
+git clone https://github.com/your-org/pokemon-player ~/.hermes/pokemon-player
+```
+
+### mGBA / DeSmuME (GBA/NDS)
+
+```bash
+# macOS
+brew install mgba desmume
+
+# Linux
+sudo apt install mgba-qt desmume
+```
+
+## Startup — pyboy Game Server
+
+```bash
 # 1. Start game server
 cd ~/.hermes/pokemon-player
 python game-server.py --rom PokemonRed.gb --port 5000 &
@@ -33,9 +65,35 @@ curl http://localhost:5000/health  # should return {"status": "ok", "state": "pl
 
 # 3. Check RAM is readable
 curl http://localhost:5000/ram?addr=0xC000  # HP of first party Pokemon
+```
 
+## Launching Emulators (GBA/NDS)
 
-## RAM Map (Pokemon Red/Blue)
+```bash
+# mGBA (GBA)
+mgba /path/to/pokemon-emerald.gba
+
+# DeSmuME (DS)
+desmume /path/to/pokemon-platinum.nds
+```
+
+### Send input via socket (mGBA)
+
+```bash
+echo -n 'A' | nc -q0 localhost 8888
+```
+
+### Read game state with Lua (mGBA)
+
+```lua
+-- read-pokemon.lua
+memory.usememorydomain("WRAM")
+local species = memory.readbyte(0x02024284)
+local hp = memory.readword(0x0202428A)
+print(string.format("Species: %d, HP: %d/%d", species, hp, memory.readword(0x0202428C)))
+```
+
+## RAM Map (Pokémon Red/Blue)
 
 | Address | Size | Description |
 |---------|------|-------------|
@@ -47,23 +105,25 @@ curl http://localhost:5000/ram?addr=0xC000  # HP of first party Pokemon
 | 0xCC4B | 1 | Badge flags |
 | 0xD721 | 1 | Pokemon caught flag |
 
-## Key Endpoints
+## Key Endpoints (pyboy Game Server)
 
 - `GET /ram?addr=0xXXXX` — read raw RAM at hex address
 - `GET /party` — parse all 6 Pokemon: species, level, HP, status
 - `GET /battle` — current battle state, enemy Pokemon, available moves
 - `POST /button` — send a button press: `{"button": "A"}`, `{"button": "START"}`, etc.
-- `POST /combo` — send a sequence: `{"sequence": ["LEFT", "A", "DOWN", 0.1, ...]}` (timestamps in seconds)
+- `POST /combo` — send a sequence: `{"sequence": ["LEFT", "A", "DOWN", 0.1, ...]}`
 - `POST /save?name=mysave.state` — persist emulator state
 - `GET /health` — health check
 
 ## Usage
 
-bash
+### pyboy Game Server
+
+```bash
 # Basic gameplay
 curl -X POST http://localhost:5000/button -d '{"button":"A"}'
 
-# Grind XP for 5 minutes (battles, then run)
+# Grind XP for 5 minutes
 curl -X POST http://localhost:5000/combo -d '{"sequence":["A",0.5,"LEFT",0.3,"A",0.5,"B",0.1],"loop":120}'
 
 # Check party status
@@ -71,71 +131,36 @@ curl http://localhost:5000/party | jq '.[] | {species, level, hp}'
 
 # Save progress
 curl -X POST http://localhost:5000/save -d '{"name":"route1"}'
+```
 
-# Load saved state
-curl -X POST http://localhost:5000/load -d '{"name":"route1"}'
+## Emulator Comparison
 
+| Emulator | Systems | Scripting | Memory Access | Speed |
+|----------|---------|-----------|---------------|-------|
+| mGBA | GBA, GBC, GB | Lua, socket | Full RAM read/write | Fast |
+| DeSmuME | NDS | Lua, CLI | Limited | Moderate |
+| BizHawk | GBA, NDS, NES, SNES, N64 | Lua | Full | Heavy |
+| PyBoy | GB, GBC | Python | Full | Fast |
 
-## Batch File Modification Lessons (from skill evolution sessions)
+## Common Patterns
 
-When performing batch modifications to skill files (SKILL.md, JSON configs, YAML frontmatter), the following patterns were validated across 6+ agent sessions:
+### Automated shiny hunting
 
-### 1. Always Verify Immediately with read_file, Not search_files
+```bash
+# Lua script to reset until shiny encounter
+mgba --lua=shiny_hunter.lua pokemon-emerald.gba
+```
 
-The patch tool may report `{"success": true}` even when changes don't persist to disk. Always read the file back immediately after patching to confirm:
+### Batch EV training
 
-bash
-# WRONG: Trust patch success response
-patch ... && echo "done"  # patch says OK but file unchanged
+1. Launch emulator with speed-up
+2. Send battle sequence repeatedly
+3. Read stat changes to verify
+4. Switch Pokémon when done
 
-# RIGHT: Immediately read back to verify
-patch ...
-read_file(path, limit=5)  # confirm new content is actually there
+### Memory map reference
 
-
-### 2. Multiline YAML Block Scalars Need Careful Handling
-
-Descriptions using `>`, `>-`, or `|` YAML multiline syntax are collapsed to single-line strings when patched. This changes the character count and can cause truncation. Always read the full multiline block first, then patch using the exact original string:
-
-yaml
-# BEFORE (multiline block scalar)
-description: >
-  Description text that
-  spans multiple lines.
-
-# AFTER (single-line string)
-description: "Description text that spans multiple lines."
-
-
-### 3. Patch Tool May Report Success Without Persisting
-
-Across sessions, the patch tool returned `success: true` with valid diffs but the filesystem was not updated. When this happens:
-- Re-read the file to see the current state
-- Apply the patch again with the exact current string (not the string from before the failed patch)
-- If a third attempt fails, consider using `terminal` with `sed` or direct file write
-
-### 4. Batch Sizing: 5 Files Per Round is Optimal
-
-Sessions that attempted larger batches (10-20 files) had higher failure rates due to:
-- Stale context between reads and patches
-- Cumulative string-matching drift
-- No mid-batch verification
-
-Optimal pattern:
-
-
-read_file batch (5 files)
- ↓
-patch batch (5 files)
- ↓
-verify batch (5 files)
- ↓
-repeat
-
-
-### 5. search_files Caching vs. read_file Freshness
-
-`search_files` may return cached/stale results showing new content that `read_file` doesn't yet show. Always use `read_file` as the source of truth for verification. Use `search_files` only for initial discovery (e.g., "which files contain this pattern").
+Common addresses vary by game. Use tools like PKHeX or BizHawk RAM Search to discover offsets for specific games.
 
 ## Purpose
 
@@ -148,6 +173,8 @@ To give an AI agent the ability to play Pokémon Game Boy titles (Red, Blue, Yel
 **Concept 2: Combo Sequences as Macro Primitives.** Button presses are composed into parameterized sequences (e.g., `["A", 0.5, "LEFT", 0.3, "A"]`) that can be looped. This lets the agent execute multi-step grinding, catching, or movement routines as single atomic calls, reducing round-trips and API overhead.
 
 **Concept 3: Save-State Checkpointing.** The emulator saves and loads full game state snapshots via `POST /save` / `POST /load`. This allows the agent to checkpoint before risky battles, retry failed encounters, and explore branched gameplay paths without restarting from scratch.
+
+**Concept 4: In-Process Lua Scripting.** Lua scripts run inside the emulator's address space, giving them direct access to RAM, save states, and frame-level timing. This avoids IPC overhead and enables real-time decision making.
 
 ## Examples
 
@@ -163,28 +190,38 @@ Before entering a cave (high wild-encounter area), the agent saves state with `P
 **Good: Shiny-hunting automation.**
 The agent loops encounter sequences (`["A"]` repeated with short delays between encounters), reads the opposing Pokémon's species ID from RAM each frame, compares against the shiny PID, and only stops when a match is found — then calls out the result and saves.
 
+**Good: Multi-instance farming.**
+Launch three emulator instances simultaneously (one per generation), farm Poké Dollars by automating the Elite Four rematch on each, and aggregate the results into a single log file.
+
 ## Anti-Patterns
 
 **Anti-Pattern 1: Sending buttons without reading RAM first.**
 Blindly pressing buttons without reading `/battle` or menu state leads to desync — the agent presses A expecting "fight" but the cursor is on "run". Always read state, then act.
 
-**Anti-Pattern 2: Mixing batch-lesson meta-content into gameplay skill.**
-The skill file currently contains lessons about the patch tool, YAML block scalars, and batch sizing strategies. These belong in an agent worklog, not in a reusable gameplay skill. Keep the skill focused on its domain.
+**Anti-Pattern 2: Hardcoding memory addresses without version checks.**
+Pokémon game addresses differ across versions (e.g., Emerald vs. FireRed). A script written for one ROM silently reads garbage on another — always verify the ROM hash or detect version from a known signature address first.
 
-**Anti-Pattern 3: Using the save endpoint as a database commit.**
+**Anti-Pattern 3: Polling game state at maximum frame rate.**
+Reading memory every frame (60 FPS) burns CPU and can desync emulator timing. Poll at 5-10 Hz for most tasks, or use emulator-provided callbacks — the game state changes only on specific events (turn start, menu open).
+
+**Anti-Pattern 4: Sending inputs without synchronization delays.**
+Emulator inputs are buffered — sending 20 directional inputs in rapid succession before the game processes frame 1 causes all inputs to be dropped or queued incorrectly. Always insert frame-count delays between input sequences.
+
+**Anti-Pattern 5: Assuming all emulators share the same scripting API.**
+mGBA uses `memory.readbyte()`, DeSmuME uses `memory.readbyte()` with different memory domains, BizHawk wraps everything under `mainmemory.readbyte()`. Write emulator-specific adapters rather than trying to abstract them all behind one interface.
+
+**Anti-Pattern 6: Using the save endpoint as a database commit.**
 `POST /save` captures the full emulator state (ROM position, RAM, timer, sprite coordinates). Calling it every frame or after every button press bloats disk and slows gameplay. Use it only at meaningful checkpoints (before a gym battle, after catching a rare Pokémon).
-
-**Anti-Pattern 4: Hard-coding RAM addresses across games.**
-The RAM map shown here is for Pokémon Red/Blue only. Pokémon Crystal uses different addresses for party data, item storage, and battle state. Always validate the target ROM before referencing specific addresses.
 
 ## When NOT to Use
 
-- **Non-Pokémon Game Boy games.** The RAM map, battle-state parser, and combo sequences are Pokémon-specific. For other GB/C games, use a generic pyboy skill.
+- **Non-Pokémon Game Boy games.** The RAM map, battle-state parser, and combo sequences are Pokémon-specific.
 - **Real-time or action games (e.g., Super Mario).** The headless emulator has no frame-render and cannot react to on-screen events at sub-second speed. This skill is for turn-based RPGs only.
 - **Competitive online battles.** Showdown-style simulations or link-cable multiplayer require real-time opponent decisions and latency-sensitive input — not supported.
 - **Visual-feedback-dependent tasks.** If the strategy requires seeing the screen (e.g., maze navigation based on map tiles), pyboy's headless mode provides no pixel data.
 - **Emulator development or debugging.** This skill consumes the emulator API; it is not designed to debug pyboy internals or patch the emulator itself.
 - **ROM-patching or game-hacking projects.** Writing arbitrary RAM values or injecting assembly is outside the scope of this consumer-layer skill.
+- **You only need Game Boy / Game Boy Color.** Use **PyBoy** which has native Python bindings and simpler setup.
 
 ## Cross-References
 
@@ -192,4 +229,6 @@ The RAM map shown here is for Pokémon Red/Blue only. Pokémon Crystal uses diff
 - [Pokémon Red/Blue RAM Map](https://datacrystal.romhacking.net/wiki/Pok%C3%A9mon_Red/Blue:RAM_map) — comprehensive address reference
 - [gbdev Pan Docs](https://gbdev.io/pandocs/) — original Game Boy hardware specification
 - [Pokémon Crystal RAM Map](https://datacrystal.romhacking.net/wiki/Pok%C3%A9mon_Crystal:RAM_map) — if targeting Gen 2 ROMs
+- **pyboy** — Python-native Game Boy emulator with scripting support, ideal for Gen 1/2 games
+- **bizhawk** — Multi-system emulator with Lua scripting for GBA, NDS, NES, SNES, and N64 Pokémon titles
 - Modal skill — for deploying the game server on serverless GPU infra for 24/7 uptime

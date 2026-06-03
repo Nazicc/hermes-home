@@ -163,6 +163,7 @@ The bridge's `--full-sync` flag syncs *all* sessions every time. Over time, with
 - [deerflow-hermes-integration](/skills/deerflow-hermes-integration/SKILL.md) — Alternative multi-agent integration with DeerFlow
 - [hermes-agent-architecture](/skills/software-development/hermes-agent-architecture/SKILL.md) — Hermes Agent project architecture (includes hook system, evolution layer gap analysis)
 - [references/evolution-recorder-bridge.md](references/evolution-recorder-bridge.md) — Design doc for the evolution-recorder plugin that bridges runtime → evolution pipeline
+- [references/evolution-system-audit-methodology.md](references/evolution-system-audit-methodology.md) — How to verify closed-loop health of any multi-stage evolution system using DB prefix analysis, timestamp freshness, and per-pipeline tracing
 
 ---
 
@@ -187,35 +188,47 @@ Layer 3: Evolution Pipeline (hermes-agent-self-evolution/)
   GEPA only sees synthetic data → limited improvement signal
 ```
 
-### Where the fix goes
+### The evolution-recorder Plugin (Implemented ✅)
 
-The **evolution-recorder plugin** (detailed design in `references/evolution-recorder-bridge.md`) bridges Layer 1 → Layer 2 by:
+The **evolution-recorder plugin** (implementation in `~/.hermes/hermes-agent/plugins/evolution-recorder/`) bridges Layer 1 → Layer 2 by:
 
-1. Registering `post_tool_call` → captures tool_name, args, result, exit_code → writes to `simplemem_evolution/evolution.db` via direct SQLite INSERT (zero MCP overhead on hot path)
-2. Registering `on_session_end` → captures session metrics → writes to evolution.db
-3. Caching to file directory for evolver pipeline consumption
+1. Registering `post_tool_call` → extracts tool_name, args, result, exit_code → writes to `simplemem_evolution/evolution.db` via direct SQLite INSERT with weight=1.0 (failure) / 0.5 (success), tags `[tool_name, "runtime", "auto-capture"]`, source `"evolution_recorder_plugin"`
+2. Registering `on_session_end` → captures session_id, call_count, token count → writes to evolution.db with weight=0.8, tags `["session", "runtime", "auto-capture"]`
+3. Registers an `/evolution-status` slash command for live querying of recent tool captures
+4. Uses per-turn tracking with `task_id`-keyed set + `threading.Lock` to avoid duplicates
 
 **Key constraint**: `post_tool_call` is synchronous on the hot path. MCP roundtrips would add 100-500ms per tool call. Direct SQLite INSERT is the only viable approach — same pattern as the existing `evolution_remember` implementation.
+
+**Plugin files:**
+- `plugin.yaml` — manifest (hooks: `on_session_start`, `post_tool_call`, `on_session_end`; commands: `evolution_status`)
+- `evolution_recorder.py` — core logic: `EvolutionRecorderPlugin` class, thread-safe per-turn tracking, direct `EvolutionStore.upsert()` calls
+- `__init__.py` — registers hooks and command via `register()`, adjusts `sys.path` for import resolution
+
+**Pre-flight verification (June 3, 2026):**
+- Python import test via Hermes plugin loader: ✅
+- Integration write/read to `evolution.db`: ✅ (wrote and read back test entries)
+- Plugin enablement via `hermes plugins enable evolution-recorder`: ✅ (config.yaml updated)
+- Test data cleaned from evolution.db: ✅ (entries back to 531)
 
 ### Status Summary
 
 | Layer | Component | Status |
 |-------|-----------|--------|
 | Layer 1 | `post_tool_call` hook wiring in model_tools.py | ✅ Fires at runtime |
-| Layer 1 | evolution-recorder plugin | ❌ Not created |
+| Layer 1 | evolution-recorder plugin | ✅ Implemented, enabled, verified |
 | Layer 2 | SimpleMem evolution.db schema | ✅ Exists |
-| Layer 2 | Runtime data ingestion | ❌ No mechanism |
+| Layer 2 | Runtime data ingestion | ✅ Plugin writes on `post_tool_call` and `on_session_end` |
 | Layer 3 | dataset_builder synthetic source | ✅ Working |
 | Layer 3 | dataset_builder gold source | ✅ Working |
 | Layer 3 | dataset_builder sessiondb source | ❌ STUB (`pass`) |
 | Pipeline | GEPA optimizer cycles | ✅ Working |
 | Pipeline | Evolution results → skills deployment | ❌ Not implemented |
 
-### Implementation Priority
+### Remaining Work
 
-1. ✅ Create evolution-recorder plugin (handles Layers 1→2 bridge)
-2. ✅ Implement BuildFromSessionDB in dataset_builder (handles Layers 2→3 bridge)
-3. ✅ Wire approved capsules → skill updates (closes the loop)
+1. ✅ ~~Create evolution-recorder plugin~~ (handles Layers 1→2 bridge)
+2. ❌ Implement BuildFromSessionDB in dataset_builder (handles Layers 2→3 bridge)
+3. ❌ Wire approved capsules → skill updates (closes the loop)
 
 Each step is independently testable with synthetic data before connecting to the next layer.
 
@@ -643,6 +656,30 @@ launchctl kickstart -k gui/$(id -u)/com.hermes.gateway
 **Verify:** `python3 ~/.skillclaw/claw_adapter.py _check_hermes_config 2>/dev/null && echo "Config OK"`
 
 ---
+
+## Diagnosis First: Verify Pipeline Health Before Setup
+
+> ⚠️ **Before assuming the pipeline needs setup, verify whether it's actually broken — or whether data is simply not flowing.**
+
+Use `references/evolution-system-audit-methodology.md` to run a storage-evidence audit. The core technique:
+
+```bash
+# One query reveals pipeline health
+sqlite3 ~/.hermes/simplemem_evolution/evolution.db "
+WITH parts AS (
+  SELECT SUBSTR(entry_id, 1, INSTR(entry_id || '_', '_') - 1) AS prefix
+  FROM evolution_entries
+)
+SELECT prefix, COUNT(*) AS count
+FROM parts GROUP BY prefix ORDER BY count DESC;"
+```
+
+**Interpretation at a glance:**
+- Prefix writing today → that pipeline is alive
+- Prefix stopped 7+ days ago → that pipeline died
+- No prefix for a given component → that component never started producing data
+
+The DB prefix technique works because each data source leaves a unique signature in its `entry_id`. You don't need to read config files, check plugin status, or trace code paths — the DB tells you directly what's actually flowing.
 
 ## Verification Checklist
 
