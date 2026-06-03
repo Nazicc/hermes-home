@@ -1,0 +1,74 @@
+# Honcho 持久化栈 — 代码即基础设施
+# 用法: cd ~/.hermes/hermes-agent/honcho && docker compose up -d
+# 此文件是单点真理源，重启/重建后自动恢复
+#
+# 密码: honcho123 (2026-06-03 重置)
+# 网络: honcho-net (bridge, 172.23.0.0/24)
+
+name: honcho
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: honcho-postgres
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5433:5432"
+    environment:
+      POSTGRES_USER: honcho
+      POSTGRES_PASSWORD: honcho123
+      POSTGRES_DB: honcho
+    volumes:
+      - honcho-pgdata:/var/lib/postgresql/data
+    networks:
+      - honcho-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U honcho -d honcho"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  api:
+    image: honcho-api:patched-v5
+    container_name: honcho-api
+    restart: unless-stopped
+    ports:
+      - "8889:8889"
+    command: >
+      bash -c "python3 /app/honcho-patch.py && fastapi run --host 0.0.0.0 --port 8889 src/main.py"
+    environment:
+      DATABASE_URL: postgresql://honcho:honcho123@honcho-postgres:5432/honcho
+    volumes:
+      - ./honcho-config.toml:/app/config.toml
+    networks:
+      - honcho-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  deriver:
+    image: honcho-api:patched-v5
+    container_name: honcho-deriver
+    restart: unless-stopped
+    command: >
+      bash -c "python3 /app/honcho-patch.py && python3 -m src.deriver"
+    environment:
+      DATABASE_URL: postgresql://honcho:honcho123@honcho-postgres:5432/honcho
+    volumes:
+      - ./honcho-config.toml:/app/config.toml
+    networks:
+      - honcho-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  honcho-pgdata:
+    name: honcho-pgdata
+    external: true
+
+networks:
+  honcho-net:
+    name: honcho-net
+    external: true

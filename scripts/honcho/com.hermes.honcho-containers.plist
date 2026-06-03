@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hermes.honcho-containers</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>exec $HOME/.hermes/scripts/honcho-ensure.sh</string>
+    </array>
+
+    <!-- 登录时立即执行一次 -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- 每 5 分钟检查一次，确保容器持续可用 -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <!-- 标准日志（必须使用绝对路径，launchd 不展开 $HOME） -->
+    <key>StandardOutPath</key>
+    <string>/Users/can/.hermes/logs/honcho-ensure.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/can/.hermes/logs/honcho-ensure.stderr.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/can</string>
+    </dict>
+
+    <!-- 低优先级，不影响系统启动 -->
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>AbandonProcessGroup</key>
+    <true/>
+</dict>
+</plist>
