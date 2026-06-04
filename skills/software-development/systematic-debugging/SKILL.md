@@ -247,47 +247,7 @@ write_file("/path/to/file", "new content")
 5. **Blind restart** — Restarting services as a debugging technique. It clears state and loses evidence. Observe first, restart as a targeted test only.
 6. **API-stability assumption** — Assuming third-party APIs return the same shape. They change. Check the actual contract in logs or test calls.
 7. **Stale-state blindspot** — Assuming cached or environment data is fresh. Scripts read from previous runs, config files are stale, environment variables are wrong. Verify.
-9. **macOS-cp-alias trap** — Using bare `cp source dest` on macOS. It's aliased to `cp -i` and hangs on confirmation. Always use `/bin/cp -f`.
-
-10. **bash-set-u-with-unicode** — When using `set -euo pipefail` (or `set -u`), a variable followed by Unicode/CJK punctuation (fullwidth comma U+FF0C, Chinese period, etc.) triggers "unbound variable" errors. Bash treats `$STATUS，` as a single token because the wide punctuation is not recognized as a word boundary. Always use `${VAR}` (curly braces) when the context might contain non-ASCII characters. **Defensive rule**: always use `${VAR}` in bash scripts with `set -u`, regardless of what follows — it costs nothing and prevents this class of bug.
-
-    ```bash
-    # NOK — fails under set -u with CJK following
-    log "[$c] 状态=$STATUS，需要重建"   # Bash reads $STATUS， as a single token
-
-    # OK
-    log "[${c}] 状态=${STATUS}，需要重建"
-    ```
-
-11. **Suspiciously-fast-completion trap** — When a command that should take time (nmap scan of a /24 subnet, masscan sweep, file download) completes instantly or orders of magnitude faster than expected, it is almost always a **silent failure**: arguments never reached the tool, the tool failed immediately, or an error was swallowed. Do NOT interpret fast completion as "no results found."
-
-    **Common root causes for scan tools:**
-    - Space-joined CIDR strings passed as a single argument to nmap (e.g., `nmap -p 3333 "172.16.2.0/24 10.1.0.0/24"`). Nmap sees one bogus target and fails silently.
-    - Empty target lists passed to the command (variable was `None` or empty string)
-    - Tool not found or wrong path, but stderr not checked
-    - `-Pn` not applied, nmap pings first and all hosts appear offline (happens on internal networks)
-
-    **How to diagnose:**
-    ```bash
-    # 1. Check the actual command being constructed: print/regex the argument string
-    # 2. Run the command manually with bash -x to see the expanded arguments
-    bash -x nmap -p 3333 172.16.2.0/24 10.1.0.0/24 2>&1
-    # 3. Check exit code of the underlying tool
-    # 4. Check if args are being split correctly when built from Python lists as strings
-    ```
-
-    **The fix:** When building command strings from multiple dynamic targets, split space-joined strings back into individual arguments before passing to the subprocess. In Python:
-    ```python
-    # WRONG — passed as single argument
-    targets = "172.16.2.0/24 10.1.0.0/24"
-    run_cmd(f"nmap {targets}")  # nmap sees one bogus "172.16.2.0/24 10.1.0.0/24"
-    # RIGHT — expand as separate arguments
-    run_cmd(f"nmap {' '.join(targets.split())}")  # split and rejoin
-    # or use subprocess with a list (no shell=True)
-    subprocess.run(["nmap", *targets.split()])
-    ```
-
-    **Real-world story:** A miner-detection nmap scan of 2 /24 subnets completed in 1 second. `detect_network()` returned `"172.16.2.0/24 10.1.0.0/24"` (one string), and `nmap_scan()` passed it directly: `nmap -p 3333,4444,... "172.16.2.0/24 10.1.0.0/24"`. Nmap failed immediately, reporting zero hosts scanned. Fix: `for subnet in args.subnets.split():` and pass each CIDR as a separate argument. (See `references/miner-fast-scan-debug.md`)
+8. **macOS-cp-alias trap** — Using bare `cp source dest` on macOS. It's aliased to `cp -i` and hangs on confirmation. Always use `/bin/cp -f`.
 
 ## When NOT to Use
 
@@ -304,10 +264,5 @@ write_file("/path/to/file", "new content")
 - **spec-driven-development** (skills/spec-driven-development/SKILL.md) — If the bug reveals missing requirements, create a spec first.
 - **incremental-implementation** (skills/incremental-implementation/SKILL.md) — For complex multi-file fixes, use checkpoint comments.
 - **context-engineering** (skills/context-engineering/SKILL.md) — When debugging reveals context pollution, reset and re-observe.
-- **hermes-agent-diagnostics** (hermes-agent/hermes-agent-diagnostics/SKILL.md) — For Hermes system-level issues, start here first.
+- **hermes-agent-diagnostics** (skills/hermes-agent-diagnostics/SKILL.md) — For Hermes system-level issues, start here first.
 - **deerflow-commander** (skills/deerflow-commander/SKILL.md) — Delegate deep research on unfamiliar technologies during debugging.
-- **Skills quality scorer format** (references/skills-quality-scorer-format.md) — Reference for the skills-quality MCP server format requirements. Use when skill quality scores don't match expectations.
-- **Multi-layer API system regression** (references/multi-layer-api-regression.md) — Systematic protocol for testing multi-component HTTP-based systems end-to-end. Covers field contract verification, round-trip integrity testing, cross-contamination detection, background process checks, and a reusable Python test template. Use when any system has serially-dependent HTTP components, multiple memory layers, or API payload contracts that can drift.
-- **Docker Exited container diagnosis** (references/docker-exited-container-diagnosis.md) — Diagnosis workflow for containers that start and immediately exit. Covers empty-log syndrome (use `docker start` to trigger real-time errors), mount-point verification with `file`, and common error patterns including the "not a directory" bind-mount type mismatch. Use when any Docker container shows `Exited(N)` and `docker logs` is empty.
-- **Docker PostgreSQL auth crash** (references/docker-postgres-auth-crash.md) — Diagnosis workflow for containers that start successfully (`Up`) but crash because PostgreSQL authentication fails. Covers the crucial socket-vs-network auth test, identifying corrupted SCRAM-SHA-256 password hashes (valid-looking but broken), and the `ALTER USER ... WITH PASSWORD` fix. Use when application containers exit with `FATAL: password authentication failed` but the password string is correct.
-- **Hermes cron false-positive failure** (references/hermes-cron-false-positive.md) — Diagnosis for cron jobs showing `last_status=error` when the agent actually produced valid output. Covers the `completed` flag bug (`<` vs `<=` in `conversation_loop.py:4406`) and transient delivery failures. Use when a cron job reports error but delivered content was fine.

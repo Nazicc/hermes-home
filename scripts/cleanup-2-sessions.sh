@@ -26,38 +26,45 @@ else
     echo "  ⚠ state.db not found"
 fi
 
-# ── Compress bloated session files ──
+# ── Compress bloated session files using single Python pass ──
+# Avoids spawning python3 per file (was timing out at 4888 files)
 if [ -d ~/.hermes/sessions ]; then
-    for f in ~/.hermes/sessions/session_*.json; do
-        [ -f "$f" ] || continue
-        count=$(python3 -c "
-import json
-with open('$f') as fp:
-    d = json.load(fp)
-msgs = d.get('messages', [])
-print(len(msgs))
+    SESSION_COMPRESSED=$(python3 -c "
+import json, os, glob, time
+
+sessions_dir = os.path.expanduser('~/.hermes/sessions')
+files = sorted(glob.glob(os.path.join(sessions_dir, 'session_*.json')))
+compressed = 0
+head, tail = 5, 5
+
+for f in files:
+    # Fast pre-filter: skip files too small to have >80 messages
+    try:
+        size = os.path.getsize(f)
+    except OSError:
+        continue
+    if size < 200000:  # less than ~200KB can't have 80+ msgs
+        continue
+    try:
+        with open(f) as fp:
+            d = json.load(fp)
+        msgs = d.get('messages', [])
+        count = len(msgs)
+        if count > 80:
+            d['messages'] = msgs[:head] + [
+                {'role': 'system', 'content': f'[CONTEXT COMPACTION] {count - head - tail} messages compressed. Original had {count} total messages.'}
+            ] + msgs[-tail:]
+            d['message_count'] = len(d['messages'])
+            d['_compressed_from'] = count
+            d['_compressed_at'] = time.strftime('%Y-%m-%dT%H:%M:%S')
+            with open(f, 'w') as fp:
+                json.dump(d, fp, ensure_ascii=False)
+            compressed += 1
+    except (json.JSONDecodeError, OSError, KeyError):
+        continue
+
+print(compressed)
 " 2>/dev/null || echo "0")
-        if [ "$count" -gt 80 ]; then
-            head=5
-            tail=5
-            python3 -c "
-import json, os, time
-with open('$f') as fp:
-    d = json.load(fp)
-msgs = d['messages']
-count = len(msgs)
-d['messages'] = msgs[:$head] + [
-    {'role': 'system', 'content': f'[CONTEXT COMPACTION] {count - $head - $tail} messages compressed. Original had {count} total messages.'}
-] + msgs[-$tail:]
-d['message_count'] = len(d['messages'])
-d['_compressed_from'] = count
-d['_compressed_at'] = time.strftime('%Y-%m-%dT%H:%M:%S')
-with open('$f', 'w') as fp:
-    json.dump(d, fp, ensure_ascii=False)
-" 2>/dev/null || true
-            SESSION_COMPRESSED=$((SESSION_COMPRESSED + 1))
-        fi
-    done
     echo "  ✓ Compressed $SESSION_COMPRESSED bloated sessions (>80 messages)"
 fi
 

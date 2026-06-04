@@ -2,9 +2,12 @@
 name: skills-evolution-from-research
 description: "Evaluate and integrate external open-source projects into Hermes Agent skills. Use when analyzing GitHub repos for potential skill improvements, or when upgrading skill standards based on external research, or when auditing existing local skills for stub quality, outdated information, or missing trigger/anti_trigger fields. NOT for: trivial one-off tasks, skills that are already well-developed and tested, when you lack environment context to validate the integration, or when the external project has no relevant overlap with existing Hermes capabilities."
 category: general
-version: 2.2.0
+version: 2.1.0
+...
 author: Hermes Agent
+...
 license: MIT
+...
 ---
 
 ## Skill Evolution Protocol
@@ -164,40 +167,7 @@ If `venv` is missing or DSPy import fails → skip to Phase 3 (manual evolution)
 4. **Draft** — generate replacement sections
 5. **Verify** — test in simulated environment
 
-### 2.5 Scan for Related Skills in External Skill Repos
-
-When analyzing a large skill repository (1,000+ skills), use this targeted workflow to find skills matching a specific theme:
-
-**Step 1 — Search for matches:**
-```bash
-gh search code "vibe code" --repo owner/repo
-```
-Use specific keywords relevant to your theme. Returns matching files with repo paths.
-
-**Step 2 — List directory structure:**
-```bash
-gh api repos/owner/repo/git/trees/HEAD?recursive=1 | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-for item in data.get('tree', []):
-    if 'vibe' in item['path'].lower():
-        print(item['path'])
-"
-```
-Filters tree to show only theme-matching files/dirs. Adjust the keyword per theme.
-
-**Step 3 — Read raw file content (bypasses API rate limits):**
-```bash
-curl -s "https://raw.githubusercontent.com/owner/repo/main/skills/target-skill/SKILL.md"
-```
-Use raw.githubusercontent.com for content — avoids unauthenticated API rate limits entirely.
-
-**Step 4 — Evaluate and present:**
-Present findings in a structured comparison table with columns: Skill Name, Purpose, When to Use, Recommendation. Always recommend ONE skill as the best fit (not all of them). Use the "Audit → Import → Adapt → Validate" sequence from Phase 3 for installation.
-
-**Pitfall — Plugin duplicates:** Large skill repos often mirror skills into `plugins/` directories (for multi-platform installs). Always read from the root `skills/` path first; ignore plugin copies to avoid redundant analysis.
-
-### 2.6 Synthesis
+### 2.5 Synthesis
 
 **Integration Strategy:**
 

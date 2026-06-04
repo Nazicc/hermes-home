@@ -1,47 +1,107 @@
 ---
 name: github-pr-workflow
-description: "Full PR lifecycle — branch, commit, open PR, monitor CI, auto-fix, merge. NOT for auth setup (use github-auth) or repo management."
+description: "Full pull request lifecycle — create branches, commit changes, open PRs, monitor CI status, auto-fix failures, and merge. Works with gh CLI or falls back to git + GitHub REST API via curl. Trigger signals: user asks to create a PR, open a pull request, merge code, check CI status, fix CI failures, sync branches. NOT for: GitHub authentication setup (use github-auth), repository creation/forking/management (use github-repo-management), code review without PR context (use github-code-review)."
+category: general
 ---
 
-## Purpose
+## GitHub PR Workflow
 
-`github-pr-workflow` automates the complete PR lifecycle: creating branches, committing changes, opening PRs (via `gh` CLI or `git` + `curl` fallback), monitoring CI status, auto-fixing failures, and merging. It detects whether `gh` is available and chooses the right tooling automatically.
+### Prerequisites
 
-## Why This Works
+**gh CLI (preferred):** `brew install gh` or `npm install -g gh`
+**Fallback:** `git`, `curl`, `jq`, and `GH_TOKEN` env var set to a GitHub Personal Access Token
 
-**Concept 1: Automatic tool detection prevents redundant fallback logic.** The workflow checks `gh` availability once at the start and branches accordingly. This avoids embedding `gh`-specific commands that would fail silently when `gh` is absent, and avoids writing raw API calls when the CLI is available.
+### Detection Flow
 
-**Concept 2: REST API fallback makes the workflow portable.** `gh` requires separate installation and authentication setup. Using `curl` with `GH_TOKEN` as fallback means the workflow works anywhere — CI runners, containers, or bare-metal servers — as long as a GitHub token is available.
 
-**Concept 3: CI monitoring with auto-fix prevents stale PRs.** Unfixed CI failures cause PRs to sit open for days. Automated polling + fix-commit-on-failure shortens the feedback loop from "notify the author and wait" to "fix and re-submit in minutes."
+if gh is installed and gh auth status succeeds:
+    use gh CLI for all operations
+else:
+    use git + GitHub REST API via curl
+    require GH_TOKEN env var
+    require REPO_OWNER and REPO_NAME env vars (or extract from git remote)
 
-## Examples
 
-**Good:** User says "create a PR for this feature" → workflow checks `gh` (installed) → `gh` creates branch `feat/20260602093045` → commits staged changes → opens PR with title and body → monitors CI status in a loop (polling every 30s, timeout 5 min) → CI passes → `gh pr merge <num> --squash --delete-branch`.
+## Branch & Commit Workflow
 
-**Good:** `gh` is not installed (CI runner) → workflow falls back to `git` + `curl` → extracts `OWNER/REPO_NAME` from `git remote get-url origin` → creates branch via `git` → opens PR via `POST /repos/:owner/:repo/pulls` — same result, different implementation.
+### Via gh CLI
 
-**Good:** CI fails with a lint error → workflow detects the failure state → creates a new commit fixing the lint issue → `git push --force-with-lease` to update the PR → re-checks CI status → continues on green.
+bash
+# Create a branch and commit
+BRANCH="feat/$(date +%Y%m%d%H%M%S)"
+git checkout -b $BRANCH
+git add . && git commit -m "..."
+git push -u origin $BRANCH
 
-## Anti-Patterns
+# Create PR
+gh pr create --title "<title>" --body "<description>" --base <target-branch>
+gh pr view --web  # open in browser
 
-**Anti-Pattern 1: Hardcoding gh CLI commands without a fallback.** Assuming `gh` is always available leads to silent failures in CI runners, fresh dev environments, or containers. Always detect and fall back.
 
-**Anti-Pattern 2: Creating PRs with empty or placeholder descriptions.** A PR with "fix bug" or no body forces reviewers to guess the intent. Always validate the title and body before calling the API — generate them from the commit history or spec.
+### Via curl fallback
 
-**Anti-Pattern 3: Pushing force after auto-fix without --force-with-lease.** Plain `git push --force` destroys any commits another contributor may have pushed to the same branch. Always use `--force-with-lease` to fail if the remote has diverged.
+bash
+# Detect repo from git remote
+REPO=$(git remote get-url origin | sed 's|.*github.com/||' | sed 's|\.git$||')
+OWNER=$(echo $REPO | cut -d/ -f1)
+REPO_NAME=$(echo $REPO | cut -d/ -f2)
 
-**Anti-Pattern 4: Infinite CI polling without a timeout.** CI can hang silently (queued, cancelled, or infrastructure failure). Always set a polling timeout (e.g., 10 minutes with 30s intervals) and report "timed out" rather than polling forever.
+# Create branch
+BRANCH="feat/$(date +%Y%m%d%H%M%S)"
+git checkout -b $BRANCH
+git add . && git commit -m "..."
+git push -u origin $BRANCH
 
-## When NOT to Use
+# Create PR via REST API
+curl -s -X POST \
+  -H "Authorization: token $GH_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  https://api.github.com/repos/$OWNER/$REPO_NAME/pulls \
+  -d '{"title":"<title>","body":"<description>","head":"'$BRANCH'","base":"<target>"}'
 
-- **GitHub authentication setup** — Use `github-auth` skill to configure `gh` auth or set `GH_TOKEN` first.
-- **Repository creation/forking/management** — Use `github-repo-management` for repo-level operations.
-- **Code review without PR context** — Use `github-code-review` for analyzing git diffs without opening a PR.
-- **WIP or exploratory branches** — Opening a formal PR for throwaway experiments creates noise in the reviewer queue. Use a draft PR or skip the workflow entirely.
 
-## Cross-References
+## CI Monitoring & Auto-Fix
 
-- **github-auth** (skills/github/github-auth/SKILL.md) — Set up `gh` authentication or `GH_TOKEN` before running this workflow. Run this first if `gh auth status` fails.
-- **github-code-review** (skills/github/github-code-review/SKILL.md) — After the PR is open, use this skill for the actual review workflow: analyzing diffs, running linters, and requesting changes.
-- **requesting-code-review** (skills/software-development/requesting-code-review/SKILL.md) — Pre-commit verification pipeline to run *before* opening a PR. Catches issues before they enter the PR review cycle.
+### Check CI status
+
+bash
+# gh
+gh pr status
+gh pr checks <pr-number>
+
+# curl fallback
+curl -s -H "Authorization: token $GH_TOKEN" \
+  "https://api.github.com/repos/$OWNER/$REPO_NAME/commits/$BRANCH/status"
+
+
+### Auto-fix CI failures
+
+bash
+# Checkout PR branch
+gh pr checkout <pr-number>
+# Fix failures locally, amend or create new commit
+git commit --amend --no-edit
+git push --force-with-lease
+
+
+## Merge
+
+bash
+# gh
+gh pr merge <pr-number> --squash --delete-branch
+
+# curl fallback
+curl -s -X PUT \
+  -H "Authorization: token $GH_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/$OWNER/$REPO_NAME/pulls/<pr-number>/merge" \
+  -d '{"merge_method":"squash"}'
+
+
+## Quality Guidelines
+
+- Check gh availability first, then fall back to git+curl. Do NOT assume gh is installed.
+- PR descriptions and branch names must be validated before creation to avoid silent failures.
+- CI status polling should include a timeout to prevent infinite loops.
+- Auto-fix logic must identify the specific failing step before attempting remediation.
+- API rate limiting: 5000 req/hr for authenticated requests

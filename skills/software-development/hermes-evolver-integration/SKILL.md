@@ -1,350 +1,12 @@
 ---
 name: hermes-evolver-integration
-description: "Integrate Hermes Agent with Evolver (NousResearch/hermes-agent-self-evolution) via lightweight bridge — sync Hermes session logs to Evolver's scan directory, run GEPA optimization dry-run to validate setup, and optionally trigger full evolution runs."
-tags: [hermes, evolver, evolution, bridge, experiments]
-related_skills: [hermes-agent, systematic-debugging, native-mcp, deerflow-hermes-integration]
----
-
-## Teaching: Why This Works
-
-### Systematic Session Evolution
-
-The Hermes ↔ Evolver integration follows a three-step pipeline that mirrors the scientific method: **collect data → analyze → apply insights**.
-
-**Step 1 (Bridge):** Hermes accumulates session logs in `state.db`. The bridge script extracts these as structured JSON files into Evolver's scan directory — this is the data collection phase. By running every 4 hours via cron, it builds a growing dataset of actual agent usage.
-
-**Step 2 (GEPA):** Evolver's Genetic Evolutionary Prompt Algorithm reads these session files and applies mutation/crossover operations to find better prompt strategies. Each cycle produces candidate improvements (`capsules.json`) and tracks quality metrics over time (`rtk_metrics.jsonl`) — this is analysis.
-
-**Step 3 (Forward):** Successful evolution results should feed back into the agent's reputation store (SimpleMem Evolution) to close the loop. Currently this step is implemented via SQLite INSERT, but the full hook-based pipeline (gep_recall/gep_record_outcome/finalize_and_decay) is documented and ready for future implementation.
-
-### Why the Three-Phase Architecture Matters
-
-Separation of concerns: the bridge doesn't run evolution, and the evolution engine doesn't write to agent memory. Each component can fail or be upgraded independently. A bridge failure doesn't corrupt the evolution store; a GEPA crash doesn't delete session logs.
-
-### The Config Override Trap
-
-SkillClaw's `_configure_hermes` overwrites `config.yaml` on every `hermes mcp add` / `hermes config set` / install. Understanding this single fact prevents the most common integration failure mode — config loss after tweaks. The workaround (editing `config.yaml.d/` or restoring via script) is built into the integration's operational model.
-
-## Examples
-
-### Example 1: Fresh Integration — From Zero to Running Cycle
-
-**Scenario:** You've just cloned the evolver repo and want to verify the full pipeline works end-to-end.
-
-**Steps:**
-```bash
-# 1. Verify prerequisites
-ls ~/.hermes/hermes-agent/hermes-agent-self-evolution/ || echo "Clone needed"
-ls ~/.hermes/hermes-agent/scripts/hermes_to_evolver_bridge.py || echo "Bridge missing"
-
-# 2. Dry-run bridge (safe, no side effects)
-cd ~/.hermes/hermes-agent
-python3 scripts/hermes_to_evolver_bridge.py --dry-run
-# → "Would sync 47 sessions to /Users/can/.openclaw/agents/hermes-agent/sessions/"
-
-# 3. Actually sync (now that dry-run confirmed it works)
-python3 scripts/hermes_to_evolver_bridge.py --full-sync
-# → "Synced 47 sessions to /Users/can/.openclaw/agents/hermes-agent/sessions/"
-
-# 4. Verify scan directory populated
-ls ~/.openclaw/agents/hermes-agent/sessions/ | wc -l
-# → 47 (matches dry-run count)
-```
-
-**Outcome:** Full bridge pipeline verified in 4 commands. Dry-run prevents accidental writes during first-time setup.
-
-### Example 2: Config Loss After hermes mcp add
-
-**Scenario:** You added a new MCP server via `hermes mcp add openviking`, and suddenly the evolver integration breaks with API key errors.
-
-**Diagnosis:**
-```bash
-# 1. Check if config was overwritten
-diff ~/.hermes/config.yaml ~/.hermes/config.yaml.bak
-# → Lines differ: the OPENAI_API_BASE override is missing
-
-# 2. Confirm SkillClaw was the culprit
-grep "MINIMAX_API_KEY" ~/.hermes/config.yaml
-# → Not found (was there before the mcp add)
-
-# 3. Restore from backup
-/bin/cp -f ~/.hermes/config.yaml.bak ~/.hermes/config.yaml
-```
-
-**Root Cause:** SkillClaw's `_configure_hermes` rewrites `config.yaml` on every `hermes mcp add`. The custom evolver provider config was in the file but not preserved.
-
-**Prevention:** Add custom provider configs to `~/.hermes/config.yaml.d/` instead of directly in `config.yaml`.
-
-### Example 3: Verifying Step 3 Gap (Evolution Not Written to SimpleMem)
-
-**Scenario:** After running GEPA cycles, you check `events.jsonl` and see data, but the SimpleMem Evolution Store is empty.
-
-**Diagnosis:**
-```bash
-# 1. Confirm GEPA is producing events
-cat ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/events.jsonl | wc -l
-# → 142 events exist
-
-# 2. Check SimpleMem evolution store
-sqlite3 ~/.hermes/simplemem_evolution/evolution.db "SELECT COUNT(*) FROM evolution_entries;"
-# → 0 (nothing written)
-
-# 3. Confirm the evolver_to_simplemem.py script exists
-ls ~/.hermes/hermes-agent/scripts/evolver_to_simplemem.py
-# → No such file (Step 3 not implemented)
-```
-
-**Root Cause:** The documented Step 3 bridge (`evolver_to_simplemem.py`) has not been created yet. GEPA produces `events.jsonl` but nothing reads it into SimpleMem.
-
-**Mitigation:** Either implement the script from the documentation below, or check `events.jsonl` manually to verify GEPA is working.
-
-## Anti-Patterns
-
-### 🔴 Editing config.yaml Directly When SkillClaw Manages It
-Manually editing `~/.hermes/config.yaml` to add custom provider configs, only to have SkillClaw's `_configure_hermes` overwrite them on the next `hermes mcp add`, `hermes config set`, or install.
-
-**Fix:** Add custom overrides to `~/.hermes/config.yaml.d/` (which is merged into the main config after SkillClaw runs), or re-apply changes via `restore_hermes_config.sh`. Never edit `config.yaml` directly if you use SkillClaw.
-
-### 🟡 Bridge Pipeline Stalled — Reads Old Honcho Files Instead of evolution.db
-
-The `hermes_to_evolver_bridge.py` reads from `state.db` (Hermes' session DB) and writes to `~/.openclaw/agents/hermes-agent/sessions/`. It has been reading the same 200 sessions for months — the checkpoint passed all sessions long ago, so every 4-hour cycle produces identical output: active_ratio=0.45, signals=low_engagement+context_bloat+skill_drift. GEPA has no new data to learn from.
-
-Meanwhile, the evolution-recorder plugin writes real runtime data (735 tool calls, 207 sessions) to `evolution.db` — but nothing reads it for evolution.
-
-**Diagnosis**:
-```bash
-# Check if bridge is stalled
-wc -l ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/events.jsonl
-# If line count hasn't grown, bridge is stalled
-
-# Compare bridge output vs evolution.db data
-cd ~/.hermes && python3 -c "
-import sqlite3, pathlib
-db = pathlib.Path.home() / '.hermes' / 'simplemem_evolution' / 'evolution.db'
-conn = sqlite3.connect(str(db))
-tool_calls = conn.execute('SELECT COUNT(*) FROM evolution_entries WHERE entry_id LIKE \"tool_%\"').fetchone()[0]
-sessions = conn.execute('SELECT COUNT(*) FROM evolution_entries WHERE entry_id LIKE \"session_%\"').fetchone()[0]
-print(f'Tool calls: {tool_calls}, Session summaries: {sessions}')
-"
-```
-
-**Fix**: Rewrite `dataset_builder.BuildFromSessionDB()` in the GEPA pipeline to read from `evolution.db` instead of Honcho session files. Or write a new bridge (`evolution.db → Honcho sessions`) that transforms evolution.db entries into the format GEPA expects.
-
-### 🟡 evolution-recorder `_analyze_result` Type-Check Bug
-
-The `_analyze_result()` function uses `isinstance(result, dict)` but Hermes' terminal tool returns a `ToolResult` dataclass. This causes a silent fall-through to the "unspecified failure" path at line 207-208, flagging ~50% of successful terminal calls as failures (exit_code=0, output valid, but Success=False).
-
-**Impact**: Corrupted error rate metrics in evolution.db. The bridge reports 59% terminal "errors" but the real rate is ~5.5%.
-
-**Fix**: Add `hasattr` check before `isinstance` cascade in `evolution_recorder.py`:
-```python
-def _analyze_result(self, result, tool_name):
-    if hasattr(result, 'output'):  # ToolResult dataclass
-        result_d = {"output": result.output, "error": result.error, "exit_code": result.exit_code}
-    elif isinstance(result, dict):
-        result_d = result
-    else:
-        return True, None  # Unknown type — don't assume failure
-    # ... rest of analysis on result_d
-```
-
-The GEPA optimizer in `hermes-agent-self-evolution` only operates on `predictor.signature.instructions` — a 200–800 character string. The full skill body (which can be 40,000+ characters) is discarded during optimization:
-
-- A skill like `hermes-agent` (45K chars of teaching content) gets compressed into ~211 chars of predictor instructions
-- The optimizer cannot rewrite skill examples, add anti-patterns, or improve pedagogical quality
-- Fitness scores measure whether a pared-down instruction string works, not whether the full skill improves
-
-**Impact:** 16 evolution runs showed only +0.009 absolute improvement on average (baseline 0.604 → 0.613), with 56.3% positive, 18.8% regression, 25% no-change. The output-scope limitation is the primary suspect.
-
-**Diagnosis:**
-```bash
-cd ~/.hermes/hermes-agent/hermes-agent-self-evolution
-python3 -c "
-import json
-caps = json.load(open('assets/gep/capsules.json'))
-for c in caps:
-    inst = c.get('content', {}).get('instruction', '')
-    print(f'Instruction length: {len(inst)} chars')
-"
-```
-
-**Fix:** Extend `evolve_skill.py`'s `mutate_skill()` and `crossover_skills()` to operate on full skill body sections (Examples, Anti-Patterns, Teaching), not just the `instruction` field. Or implement a two-stage pipeline: Stage 1 optimizes instructions, Stage 2 rewrites the full skill body based on those instructions.
-
-See `references/16-run-analysis.md` for full statistical breakdown.
-
-### 🔴 Assuming GEPA Hook Functions Exist
-Reading the skill documentation and treating `gep_recall`, `gep_record_outcome`, and `finalize_and_decay` as callable functions when they are placeholder names — not implemented in the Hermes agent codebase.
-
-**Fix:** The only reliable write path is SQLite `INSERT OR IGNORE` directly into `evolution.db`. Verify by grepping: `grep -r "gep_recall\|gep_record_outcome\|finalize_and_decay" ~/.hermes/hermes-agent/ | wc -l` should return 0.
-
-### 🔴 Using `python` Instead of `python3` on macOS
-On MacBooks, the default `python` command may not exist or may point to Python 2. All bridge scripts and GEPA commands hardcode `python3`, but cron jobs or ad-hoc commands may use bare `python`.
-
-**Fix:** Always use `python3` explicitly in scripts, cron commands, and terminal sessions. Verify: `which python3` should return a valid path.
-
-### 🔴 Running Full Sync on Every Cron Tick
-The bridge's `--full-sync` flag syncs *all* sessions every time. Over time, with hundreds of sessions, this becomes slow and redundant — most sessions haven't changed between 4-hour ticks.
-
-**Fix:** Use the default behaviour (sync recent 50 sessions) for regular cron runs. Only use `--full-sync` for initial setup or after manual cleanup of the scan directory.
-
-## When NOT to Use This Skill
-
-- **For simple session recall** — use SimpleMem MCP `memory_search` or `session_search` instead
-- **For non-Hermes agent evolver setups** — this integration is specific to Hermes Agent's state.db format and cron infrastructure
-- **For skill authoring without evolver** — use skill\_manage directly; the evolver pipeline is only needed for automated evolution
-- **For debugging GEPA algorithm internals** — this skill covers the integration pipeline (bridge → files → store), not the GEPA genetic algorithm itself
-- **For single-step evolution testing** — use the evolve server's `--dry-run` flag instead of triggering full cycles
-- **When SkillClaw is not installed** — the config override workaround section is irrelevant; you can edit `config.yaml` normally
-
-## Cross-References
-
-- [hermes-agent](/skills/hermes-agent/SKILL.md) — Hermes Agent core config, MCP, and CLI reference
-- [systematic-debugging](/skills/debugging/systematic-debugging/SKILL.md) — Debugging methodology: hypothesis → isolate → fix → verify
-- [native-mcp](/skills/mcp/native-mcp/SKILL.md) — Register MCP servers in Hermes config.yaml
-- [deerflow-hermes-integration](/skills/deerflow-hermes-integration/SKILL.md) — Alternative multi-agent integration with DeerFlow
-- [hermes-agent-architecture](/skills/software-development/hermes-agent-architecture/SKILL.md) — Hermes Agent project architecture (includes hook system, evolution layer gap analysis)
-- [references/evolution-recorder-bridge.md](references/evolution-recorder-bridge.md) — Design doc for the evolution-recorder plugin that bridges runtime → evolution pipeline
-- [references/evolution-system-audit-methodology.md](references/evolution-system-audit-methodology.md) — How to verify closed-loop health of any multi-stage evolution system using DB prefix analysis, timestamp freshness, and per-pipeline tracing
-
----
-
-## Runtime Data Capture Gap (June 2026 Deep-Dive)
-
-The existing architecture covers **Step 3** (Evolver → SimpleMem, missing). But a deeper gap is the **bridge-recorder disconnect** — the evolution-recorder plugin now captures runtime data to evolution.db, but the legacy bridge still reads from Honcho session files, creating a dual pipeline that never converges.
-
-### The Dual-Pipeline Problem
-
-The system has TWO parallel data ingestion paths, but they operate independently and produce different data:
-
-```
-Path A: Legacy Bridge (still running every 4h via cron)
-  state.db ──→ hermes_to_evolver_bridge.py ──→ ~/.openclaw/.../sessions/*.jsonl
-  ↓
-  GEPA reads ├──→ events.jsonl (14 events, ALL identical)
-                ├──→ signals.json (same 3 signals every cycle)
-                └──→ rtk_metrics.jsonl
-  ⚠️ STALLED: Bridge checkpoint passed 200 sessions months ago
-     Now re-analyzes same 200 sessions every cycle
-     Every run = identical output (active_ratio=0.45, signals=low_engagement, context_bloat, skill_drift)
-
-Path B: Runtime Plugin (evolution-recorder, live now)
-  post_tool_call hook ──→ evolution.db (direct SQLite INSERT)
-  ↓
-  735 tool calls tracked (2026-06-04 snapshot)
-  207 session summaries
-  73% terminal calls, 13 unique tools detected
-  ✅ Real runtime data flowing — but NO pipeline reads it
-     dataset_builder.BuildFromSessionDB() = pass (STUB)
-```
-
-**Impact**: The legacy GEPA pipeline has no new data to learn from (stalled). The evolution.db has real runtime data but nothing consumes it for evolution signals. Two halves of the pipeline are both producing output, but neither feeds the other.
-
-### Real Data Profile (evolution.db, 2026-06-04)
-
-```
-Tool                 Calls   %Total
-terminal              537    73.1%
-mcp_simplemem_*        77    10.5%
-session_search         51     6.9%
-read_file              26     3.5%
-search_files           18     2.4%
-mcp_deerflow_*          9     1.2%
-execute_code            9     1.2%
-write_file              4     0.5%
-browser_*               3     0.4%
-other tools            21     2.9%
-                      ───── ──────
-    Total             735   100.0%
-```
-
-**Error rates (actual, not buggy detection)**:
-- terminal: 5.5% real errors (exit_code ≠ 0) — 41 bad exit codes
-- execute_code: 100% failure in cron mode (blocked)
-- browser_navigate: 83% failure
-- cron sessions: many all-error sessions from terminal failures
-- Remaining "errors" are false positives from `_analyze_result` bug
-
-### Evolution-Recorder Bug: `_analyze_result` Type-Check Failure
-
-The `evolution_recorder.py` `_analyze_result()` function (line 164+) checks `isinstance(result, dict)` but Hermes' terminal tool returns a `ToolResult` dataclass object, NOT a plain dict. This causes the function to fall through to the "unspecified failure" fallback at line 207-208, marking many successful terminal calls as "Success: False" (`"output": "...", "exit_code": 0`, `"error": null`).
-
-**Root cause (evolution_recorder.py:164-208)**:
-```python
-def _analyze_result(self, result, tool_name):
-    success = True
-    error = None
-    
-    if isinstance(result, dict):          # ← ToolResult is NOT dict
-        err = result.get("error") or result.get("error_message") or result.get("stderr")
-        ...
-    elif isinstance(result, str):         # ← ToolResult NOT str either
-        ...
-    # Falls through here
-    # Line 207-208: success = False, error = json.dumps(result)[:300]
-    if not success and error:
-        return False, error
-    return success, error
-```
-
-**Fix**: Add `hasattr(result, 'error')` check or `ToolResult` import guard before the `isinstance` cascade:
-```python
-    if hasattr(result, 'output'):  # ToolResult has .output, .error, .exit_code
-        result_d = {"output": result.output, "error": result.error, "exit_code": result.exit_code}
-        err = result_d.get("error") or result_d.get("error_message") or result_d.get("stderr")
-        ...
-    elif isinstance(result, dict):
-        ...
-```
-
-### The evolution-recorder Plugin (Implemented ✅)
-
-The **evolution-recorder plugin** (implementation in `~/.hermes/hermes-agent/plugins/evolution-recorder/`) bridges Layer 1 → Layer 2 by:
-
-1. Registering `post_tool_call` → extracts tool_name, args, result, exit_code → writes to `simplemem_evolution/evolution.db` via direct SQLite INSERT with weight=1.0 (failure) / 0.5 (success), tags `[tool_name, "runtime", "auto-capture"]`, source `"evolution_recorder_plugin"`
-2. Registering `on_session_end` → captures session_id, call_count, token count → writes to evolution.db with weight=0.8, tags `["session", "runtime", "auto-capture"]`
-3. Registers an `/evolution-status` slash command for live querying of recent tool captures
-4. Uses per-turn tracking with `task_id`-keyed set + `threading.Lock` to avoid duplicates
-
-**Key constraint**: `post_tool_call` is synchronous on the hot path. MCP roundtrips would add 100-500ms per tool call. Direct SQLite INSERT is the only viable approach — same pattern as the existing `evolution_remember` implementation.
-
-**Plugin files:**
-- `plugin.yaml` — manifest (hooks: `on_session_start`, `post_tool_call`, `on_session_end`; commands: `evolution_status`)
-- `evolution_recorder.py` — core logic: `EvolutionRecorderPlugin` class, thread-safe per-turn tracking, direct `EvolutionStore.upsert()` calls
-- `__init__.py` — registers hooks and command via `register()`, adjusts `sys.path` for import resolution
-
-**Pre-flight verification (June 3, 2026):**
-- Python import test via Hermes plugin loader: ✅
-- Integration write/read to `evolution.db`: ✅ (wrote and read back test entries)
-- Plugin enablement via `hermes plugins enable evolution-recorder`: ✅ (config.yaml updated)
-- Test data cleaned from evolution.db: ✅ (entries back to 531)
-
-### Status Summary
-
-| Layer | Component | Status |
-|-------|-----------|--------|
-| Layer 1 | `post_tool_call` hook wiring in model_tools.py | ✅ Fires at runtime |
-| Layer 1 | evolution-recorder plugin | ✅ Implemented, enabled, verified |
-| Layer 2 | SimpleMem evolution.db schema | ✅ Exists |
-| Layer 2 | Runtime data ingestion | ✅ Plugin writes on `post_tool_call` and `on_session_end` |
-| Layer 3 | dataset_builder synthetic source | ✅ Working |
-| Layer 3 | dataset_builder gold source | ✅ Working |
-| Layer 3 | dataset_builder sessiondb source | ❌ STUB (`pass`) |
-| Pipeline | GEPA optimizer cycles | ✅ Working |
-| Pipeline | Evolution results → skills deployment | ❌ Not implemented |
-
-### Remaining Work
-
-1. ✅ ~~Create evolution-recorder plugin~~ (handles Layers 1→2 bridge)
-2. ❌ Implement BuildFromSessionDB in dataset_builder (handles Layers 2→3 bridge)
-3. ❌ Wire approved capsules → skill updates (closes the loop)
-
-Each step is independently testable with synthetic data before connecting to the next layer.
-
+description: "Integrate Hermes Agent with Evolver (NousResearch/hermes-agent-self-evolution) via lightweight bridge — sync Hermes session logs to Evolver's scan directory, run GEPA optimization dry-run to validate setup, and optionally trigger full evolution runs. ⚠️ CRITICAL: SkillClaw's `_configure_hermes` (claw_adapter.py) OVERWRITES `~/.hermes/config.yaml` on every `hermes mcp add`, `hermes config set`, or hermes-agent install/upgrade. To preserve manual edits, add them to `~/.hermes/config.yaml.d/` or re-apply after each install. NOT for: simple session recall (use SimpleMem MCP `memory_search` instead), non-Hermes agent evolver setups, or skill authoring without evolver."
+category: general
 ---
 
 ## Architecture
 
-```
+
 Hermes state.db
     ↓ Step 1: hermes_to_evolver_bridge.py (cron every 4h)
 ~/.openclaw/agents/hermes-agent/sessions/
@@ -357,16 +19,16 @@ Hermes state.db
     └── signals.json        ← errsig detection output
     ↓ Step 3: evolver_to_simplemem.py (MISSING — see implementation below)
 SimpleMem Evolution Store (~/.hermes/simplemem_evolution/evolution.db)
-```
+
 
 **RTK (Runtime Kernel) metrics** track signal/quality scores over time, logged to:
 `~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/rtk_metrics.jsonl`
 
 Each line is a JSON object with: `timestamp`, `session_id`, `signal_score`, `quality_score`, `tokens_used`.
 
-```bash
+bash
 tail -5 ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/rtk_metrics.jsonl | jq
-```
+
 
 ### Key Paths
 
@@ -398,19 +60,19 @@ tail -5 ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/rtk_metric
 
 If `api.openai.com` is unreachable (TLS timeout), set `OPENAI_API_BASE` and `OPENAI_API_KEY` in `~/.hermes/hermes-agent/.env`:
 
-```bash
+bash
 echo 'OPENAI_API_BASE=https://ark.cn-beijing.volces.com/api/coding/v3' >> ~/.hermes/hermes-agent/.env
 echo 'OPENAI_API_KEY=your-ark-api-key' >> ~/.hermes/hermes-agent/.env
-```
+
 
 The `evolve.js` Node CLI hardcodes `api.openai.com`, but `dotenv` loads `OPENAI_API_BASE` at startup, overriding the hardcoded value before any HTTP calls are made. No JavaScript patching required.
 
 **Verify connectivity:**
-```bash
+bash
 curl -s -o /dev/null -w "%{http_code}" \
   -H "Authorization: Bearer <your-ark-key>" \
   https://ark.cn-beijing.volces.com/api/coding/v3/models
-```
+
 Expected: `200`
 
 ### Platform: Use `python3`, NOT `python`
@@ -423,7 +85,7 @@ On MacBooks, the default `python` command may not exist. Always use `python3` ex
 
 ### 1. Verify Prerequisites
 
-```bash
+bash
 # Check evolver repo is cloned
 ls ~/.hermes/hermes-agent/hermes-agent-self-evolution/
 
@@ -435,22 +97,22 @@ ls ~/.openclaw/agents/hermes-agent/sessions/ | wc -l  # should be > 0
 
 # Check evolver process running
 ps aux | grep evolve_server | grep -v grep
-```
+
 
 ### 2. Run Bridge Manually
 
-```bash
+bash
 cd ~/.hermes/hermes-agent/hermes-agent-self-evolution
 OPENAI_API_BASE=https://ark.cn-beijing.volces.com/api/coding/v3 \
 OPENAI_API_KEY=your_ark_api_key \
 python3 scripts/hermes_to_evolver_bridge.py --full-sync
-```
+
 
 ### 3. Verify Scan Directory
 
-```bash
+bash
 ls ~/.openclaw/agents/hermes-agent/sessions/ | head
-```
+
 
 ---
 
@@ -460,7 +122,7 @@ ls ~/.openclaw/agents/hermes-agent/sessions/ | head
 
 The bridge syncs Hermes session logs from `~/.hermes/state.db` → `~/.openclaw/agents/hermes-agent/sessions/` (Evolver's scan directory).
 
-```python
+python
 #!/usr/bin/env python3
 """Bridge: Hermes state.db → Evolver scan directory."""
 import sqlite3, json, os, argparse
@@ -511,7 +173,7 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
+
 
 Verify it's running: `ls -lt ~/.openclaw/agents/hermes-agent/sessions/ | head -5`
 
@@ -529,7 +191,7 @@ Key files:
 
 ### Validate Evolver Setup (Recommended)
 
-```bash
+bash
 cd ~/.hermes/hermes-agent/hermes-agent-self-evolution
 
 # Node CLI (recommended)
@@ -542,13 +204,13 @@ python3 -m evolver.cli validate-gepa \
 
 # Dry-run via Python module
 python3 -m dspy.evolve gepa_dry_run --config config/gepa.yaml
-```
+
 
 Expected: Report showing candidate prompts and RTK metric estimates.
 
 ### Run One Evolution Cycle
 
-```bash
+bash
 cd ~/.hermes/hermes-agent/hermes-agent-self-evolution
 
 # Python CLI (recommended)
@@ -564,22 +226,22 @@ OPENAI_API_KEY=sk-... node evolve.js
 
 # Alternative Python Module
 python3 -m gep.evolve --skills skills/ --output evolved/
-```
+
 
 ### Trigger Full Evolution Cycle (Continuous)
 
-```bash
+bash
 cd ~/.hermes/hermes-agent/hermes-agent-self-evolution
 OPENAI_API_BASE=https://ark.cn-beijing.volces.com/api/coding/v3 \
 OPENAI_API_KEY=your_ark_api_key \
 python3 -m evolve_server --use-skillclaw-config --engine workflow --publish-mode direct --interval 300
-```
+
 
 Verify evolver output:
-```bash
+bash
 tail -5 ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/events.jsonl
 tail -5 ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/capsules.json
-```
+
 
 ---
 
@@ -590,7 +252,7 @@ tail -5 ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/capsules.j
 The SimpleMem Evolution Store uses SQLite at `~/.hermes/simplemem_evolution/evolution.db`.
 
 Schema:
-```sql
+sql
 CREATE TABLE evolution_entries (
     entry_id   TEXT PRIMARY KEY,
     weight     REAL NOT NULL DEFAULT 1.0,
@@ -599,11 +261,11 @@ CREATE TABLE evolution_entries (
     created_at TEXT NOT NULL,
     decay_history TEXT NOT NULL DEFAULT '[]'
 );
-```
+
 
 ### Full Step 3 Implementation (Write This Script)
 
-```python
+python
 #!/usr/bin/env python3
 """evolver_to_simplemem.py — Read events.jsonl, write to evolution.db"""
 import sqlite3, json, sys
@@ -672,7 +334,7 @@ conn.close()
 if last_event_id:
     save_checkpoint(last_event_id)
 print(f"Wrote {count} entries to evolution store")
-```
+
 
 Run this after each evolver cycle (append to cron job or run as separate job on a 30-min offset).
 
@@ -700,15 +362,21 @@ After GEPA produces a capsule in `capsules.json`:
 ## Cron Job Management
 
 ### Method 1: Crontab
-```bash
+
+bash
 crontab -e
 # Add:
 */15 * * * * cd ~/.hermes/hermes-agent/scripts && python3 hermes_to_evolver_bridge.py >> ~/.hermes/logs/bridge.log 2>&1
-```
-**Verify:** `crontab -l | grep bridge`
+
+
+**Verify:**
+bash
+crontab -l | grep bridge
+
 
 ### Method 2: cronjob CLI
-```bash
+
+bash
 # List cron jobs
 cronjob --list
 
@@ -717,7 +385,7 @@ cronjob --info 6cf04f3139de
 
 # Manually trigger
 cronjob --trigger 6cf04f3139de
-```
+
 
 **Cron schedule:** `0 */4 * * *` (every 4 hours). Last run visible at `~/.hermes/cron/output/6cf04f3139de/`.
 
@@ -740,10 +408,12 @@ cronjob --trigger 6cf04f3139de
 | `~/.hermes/hermes-agent/hermes-agent-self-evolution/reports/` | Evolver cycle reports |
 
 ### View Cycle Output
-```bash
+
+bash
+# Latest cron output
 ls -lt ~/.hermes/cron/output/6cf04f3139de/ | head -3
 cat ~/.hermes/cron/output/6cf04f3139de/2026-*.md | tail -60
-```
+
 
 ---
 
@@ -752,46 +422,26 @@ cat ~/.hermes/cron/output/6cf04f3139de/2026-*.md | tail -60
 > ⚠️ **CRITICAL**: `_configure_hermes` in `claw_adapter.py` overwrites `~/.hermes/config.yaml` every time you run `hermes mcp add`, `hermes mcp remove`, `hermes config set`, or hermes-agent install/upgrade. If you need persistent config changes, apply them **after** SkillClaw runs.
 
 **Restore custom settings:**
-```bash
+bash
+# Run restore script (recommended)
 bash ~/.hermes/restore_hermes_config.sh
 
 # Or manually restore:
 # 1. Re-apply your custom provider config
 # 2. Restart hermes-gateway
 launchctl kickstart -k gui/$(id -u)/com.hermes.gateway
-```
 
-**Verify:** `python3 ~/.skillclaw/claw_adapter.py _check_hermes_config 2>/dev/null && echo "Config OK"`
+
+**Verify:**
+bash
+python3 ~/.skillclaw/claw_adapter.py _check_hermes_config 2>/dev/null && echo "Config OK"
+
 
 ---
 
-## Diagnosis First: Verify Pipeline Health Before Setup
-
-> ⚠️ **Before assuming the pipeline needs setup, verify whether it's actually broken — or whether data is simply not flowing.**
-
-Use `references/evolution-system-audit-methodology.md` to run a storage-evidence audit. The core technique:
-
-```bash
-# One query reveals pipeline health
-sqlite3 ~/.hermes/simplemem_evolution/evolution.db "
-WITH parts AS (
-  SELECT SUBSTR(entry_id, 1, INSTR(entry_id || '_', '_') - 1) AS prefix
-  FROM evolution_entries
-)
-SELECT prefix, COUNT(*) AS count
-FROM parts GROUP BY prefix ORDER BY count DESC;"
-```
-
-**Interpretation at a glance:**
-- Prefix writing today → that pipeline is alive
-- Prefix stopped 7+ days ago → that pipeline died
-- No prefix for a given component → that component never started producing data
-
-The DB prefix technique works because each data source leaves a unique signature in its `entry_id`. You don't need to read config files, check plugin status, or trace code paths — the DB tells you directly what's actually flowing.
-
 ## Verification Checklist
 
-```bash
+bash
 # 1. Bridge script exists
 ls ~/.hermes/hermes-agent/scripts/hermes_to_evolver_bridge.py
 
@@ -814,7 +464,7 @@ sqlite3 ~/.hermes/simplemem_evolution/evolution.db "SELECT COUNT(*) FROM evoluti
 
 # 7. Manual bridge run
 cd ~/.hermes/hermes-agent && python3 scripts/hermes_to_evolver_bridge.py --dry-run
-```
+
 
 ---
 
@@ -836,7 +486,9 @@ cd ~/.hermes/hermes-agent && python3 scripts/hermes_to_evolver_bridge.py --dry-r
 ## Regression Testing
 
 After any change, always run the full skill validation:
-```bash
+
+bash
 python3 /tmp/validate_skills.py --path ~/.hermes/skills/
-```
+
+
 Expected: "All checks passed." — 0 errors, 0 warnings across all skills.

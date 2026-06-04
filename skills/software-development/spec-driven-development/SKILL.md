@@ -1,23 +1,7 @@
 ---
 name: spec-driven-development
-description: "Spec-driven development (SDD) for AI coding assistants — create structured specs (proposal → specs → design → tasks → implement → verify) before writing code. Use for new projects, features, or changes where requirements are unclear. Integrates with writing-plans, incremental-implementation, and test-driven-development."
-category: software-development
-tags: [sdd, specification, workflow, planning, methodology]
-triggers:
-  - sdd
-  - spec-driven
-  - specification
-  - open-spec
-anti_triggers:
-  - hotfix
-  - one-liner
-  - typo
----
-
-## Purpose
-
-SDD prevents costly rework by enforcing a structured artifact pipeline — proposal, specs, design, tasks, implement, verify — **before** any code is written. It transforms vague requirements into testable acceptance criteria, catches design gaps early, and produces a reusable specification archive that outlives any single implementation session.
-
+description: "Spec-driven development (SDD) for AI coding assistants — inspired by OpenSpec (Fission-AI/OpenSpec). Use when starting a new project, feature, or significant change and no specification exists yet. Use when requirements are unclear, ambiguous, or only exist as a vague idea. Use when multiple stakeholders have conflicting expectations or the technical approach is not obvious. Integrates with writing-plans, incremental-implementation, and test-driven-development. NOT for: well-specified tasks, exploratory prototyping, hotfixes under time pressure, one-off scripts, incremental bugfixes, or when moving fast is more important than alignment."
+category: general
 ---
 
 ## Core Philosophy
@@ -50,26 +34,6 @@ Every non-trivial change goes through a structured artifact pipeline before any 
 
 ---
 
-## Why This Works
-
-### 1. Shifts Cost Left
-
-Finding a design flaw in a spec costs 10 minutes. Finding it in code costs hours. Finding it in production costs days. SDD catches the expensive problems at the cheapest possible moment.
-
-### 2. Creates Shared Understanding
-
-Code is an implementation, not a specification. Without a spec, every reader must reverse-engineer intent from implementation details. With a spec, intent is explicit — the "why" and "what" are decoupled from the "how."
-
-### 3. Enforces Traceability
-
-Each acceptance criterion in a spec maps to a task, which maps to a test, which maps to a verification step. When a requirement changes, you trace the chain and know exactly what must be updated.
-
-### 4. Produces a Living Archive
-
-Specs survive team changes, context loss, and repository archaeology. A year later, the `SPEC/` directory tells you *why* a decision was made — not just *what* was built.
-
----
-
 ## Artifact Pipeline
 
 IDEA → PROPOSAL → SPECS → DESIGN → TASKS → IMPLEMENT → REGRESSION → VERIFY → LAUNCH
@@ -98,7 +62,7 @@ SPEC/
 
 Answer the "why" before the "what":
 
-```
+markdown
 # Proposal: <short title>
 
 ## Problem Statement
@@ -124,9 +88,9 @@ How do we undo this if it goes wrong?
 
 ## Stakeholders
 Who cares about this? Who approves?
-```
 
-**Do Not Proceed to Specs Without:**
+
+**Do Not Proceed to Specs Without**:
 - [ ] Problem statement that a reasonable engineer would call "specific"
 - [ ] At least one concrete success criterion
 - [ ] Risks identified (even if mitigation is TBD)
@@ -140,7 +104,7 @@ Who cares about this? Who approves?
 
 Answer: **What exactly will we build?**
 
-```
+markdown
 # Spec: <feature name>
 
 ## Overview
@@ -149,8 +113,8 @@ One-paragraph summary of what this feature does.
 ## Functional Requirements
 
 ### FR-1: <requirement title>
-**Given** [precondition]
-**When** [action]
+**Given** [precondition]  
+**When** [action]  
 **Then** [observable outcome]
 
 ### FR-2: ...
@@ -180,11 +144,11 @@ One-paragraph summary of what this feature does.
 ## Acceptance Criteria
 - [ ] Criterion 1
 - [ ] Criterion 2
-```
+
 
 **Rule**: Specs must be concrete and verifiable. "The system should be fast" is not a spec. "Response time < 200ms at P99 under 1000 RPS" is.
 
-**Do Not Proceed to Design Without:**
+**Do Not Proceed to Design Without**:
 - [ ] Every core feature has a Gherkin-style acceptance criterion
 - [ ] Error conditions enumerated
 - [ ] Data structures defined with field-level precision
@@ -198,7 +162,7 @@ One-paragraph summary of what this feature does.
 
 Answer: **How will we build it?**
 
-```
+markdown
 # Design: <title>
 
 ## Architecture
@@ -235,11 +199,11 @@ What this component owns and does.
 
 ## Migration / Backward Compatibility
 How does this change affect existing users? Is migration required?
-```
+
 
 **Rule**: Design must specify the "how" with enough detail that a developer could implement it without asking further questions. "Use a cache" is not a design. "Use an in-memory LRU cache with 1000-entry limit and TTL of 5 minutes, evicted on process restart" is.
 
-**Do Not Proceed to Tasks Without:**
+**Do Not Proceed to Tasks Without**:
 - [ ] Architecture clearly described
 - [ ] Every component has a defined responsibility
 - [ ] Security considerations addressed
@@ -253,7 +217,7 @@ How does this change affect existing users? Is migration required?
 
 Answer: **Exactly what do we do, in what order?**
 
-```
+markdown
 # Tasks: <title>
 
 ## Task Ordering Principles
@@ -268,18 +232,28 @@ Answer: **Exactly what do we do, in what order?**
 **Design Reference:** `SPEC/design.md#component-name`
 
 #### Steps
-1. [`path/to/file.ext`]
+1. [File: `path/to/file.ext`]
+   
    [exact code or diff]
-2. [Verify] `command to verify`
+   
+2. [Verify]
+   bash
+   command to verify
+   
 
 #### Verification
 - [ ] Command X passes
 - [ ] Output contains Y
-```
+
+---
+
+### Task 2: [Short Title]
+...
+
 
 **Rule**: Tasks must be small enough to complete in a single session (< 2 hours). If a task is larger, break it down.
 
-**Do Not Proceed to Implementation Without:**
+**Do Not Proceed to Implementation Without**:
 - [ ] Every spec item mapped to a task
 - [ ] Task ordering respects dependencies
 - [ ] Each task has a verification command
@@ -305,18 +279,19 @@ Answer: **Exactly what do we do, in what order?**
 
 ### Commit Format
 
-```
+
 <type>(<scope>): <short description>
 
 [TASK-N] Short description
+
 - What changed
 - Why it was necessary
 - How it was verified
-```
+
 
 Types: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`
 
-**Do Not Skip:**
+**Do Not Skip**:
 - [ ] Running the verification command for each task
 - [ ] Committing after each successful task
 
@@ -328,7 +303,7 @@ Types: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`
 
 **Definition**: A regression test is any test that verifies existing, unchanged functionality still works.
 
-```
+markdown
 # Regression Test Checklist
 
 ## Smoke Tests
@@ -348,15 +323,15 @@ Types: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`
 ## Manual Verification (if no automated test exists)
 - [ ] Feature X manually tested on [platform]
 - [ ] Edge case Y manually verified
-```
 
-```bash
+
+bash
 # Run the full test suite
 pytest tests/ -v
 
 # Run integration tests
 pytest tests/integration/ -v
-```
+
 
 **Rule**: If the regression test suite has ANY failures after your change, you cannot proceed to launch until they are fixed or explicitly waived with a documented reason.
 
@@ -368,53 +343,58 @@ pytest tests/integration/ -v
 
 **Before launch**, perform a final verification sweep:
 
-```
+markdown
 # Launch Verification Checklist
 
 ## Correctness
-- [ ] No console.error or unhandled exceptions
+- [ ] No `console.error` or unhandled exceptions in code paths
 - [ ] All error cases have user-friendly messages
 - [ ] Input validation covers all edge cases from the spec
 - [ ] No hardcoded secrets, credentials, or API keys
 
 ## Testing Coverage
-- [ ] New code has unit test coverage ≥ 80%
+- [ ] New code has unit test coverage ≥ 80% (or documented exception)
 - [ ] All acceptance criteria from spec are covered by tests
 - [ ] Edge cases from spec are tested
 
 ## Performance
-- [ ] No obvious N+1 queries (if database involved)
-- [ ] No synchronous ops that could block the event loop
+- [ ] No obvious N+1 queries (if database is involved)
+- [ ] No synchronous operations that could block the event loop (Node.js)
 - [ ] Startup time unchanged (if applicable)
 
 ## Security
 - [ ] No SQL injection vectors
 - [ ] No XSS vectors
 - [ ] Auth tokens not logged
-- [ ] File paths sanitized
+- [ ] File paths sanitized (especially on Windows)
 
 ## Compatibility
-- [ ] Works on all supported platforms
+- [ ] Works on all supported platforms (macOS, Linux, Windows)
 - [ ] No regression for existing users
 
 ## Rollback
 - [ ] Rollback plan from proposal is documented and tested
-- [ ] Migrations are reversible
-```
+- [ ] Migrations are reversible (or marked as one-way with justification)
+
+## Pre-Launch
+- [ ] All tasks completed
+- [ ] Documentation updated
+- [ ] Code review approved
+
 
 ---
 
 ## Phase 8: Launch
 
-**Pre-launch:**
+**Pre-launch**:
 1. Final verification checklist complete
 2. Regression tests green
 3. Code review approved
 4. Changelog updated
 5. Version bumped (if applicable)
 
-**Launch execution:**
-```bash
+**Launch execution**:
+bash
 # Verify everything is clean
 make test && make build && echo "Ready to deploy"
 
@@ -423,72 +403,12 @@ terraform plan -out=plan.tfplan
 
 # Deploy with rollback capability
 ./scripts/deploy.sh --rollback-on-failure
-```
 
-**Post-launch:**
+
+**Post-launch**:
 - Monitor error rates for 30 minutes
 - Verify success criteria from proposal are being met
 - Update proposal with actual outcomes
-
----
-
-## Examples
-
-### Example 1: Adding User Profile Feature (Good SDD)
-
-**Scenario**: A microservice needs a user-profile endpoint.
-
-**Without SDD**: Developer starts coding `GET /profile` directly. Halfway through, discovers they need auth middleware, database schema, rate limiting, and a migration plan. The endpoint works after 3 days but has no error handling for edge cases, no rollback plan, and the team discovers during code review that the API shape doesn't match frontend expectations — 2 more days of rework.
-
-**With SDD** (30 minutes of spec + 4 hours implementation):
-
-1. **Proposal** (`SPEC/proposal.md`): 10 lines — problem ("users can't update their profile"), success criteria ("P95 latency < 100ms"), scope ("read + write, no avatar upload"), risks ("auth dependency").
-
-2. **Spec** (`SPEC/specs/001-profile.md`): Gherkin-style — `Given authenticated user / When GET /profile / Then returns {name, email, avatar_url}`, edge cases for unauthenticated and deleted-user.
-
-3. **Design** (`SPEC/design.md`): Middleware chain `auth → rate-limit → handler`, data flow diagram, field-level schema definition.
-
-4. **Tasks** (`SPEC/tasks.md`): 5 tasks — (1) DB migration, (2) repository layer, (3) handler, (4) middleware, (5) integration tests.
-
-5. **Implementation & Verification**: Each task verified independently. Regression suite passes in 3 minutes.
-
-**Result**: Working endpoint in half the time. No rework. Spec can be reused for documentation.
-
-### Example 2: Refactoring Auth Middleware (SDD with Brownfield)
-
-**Scenario**: Existing auth middleware has deep coupling — logic is mixed across 5 files. Team wants to extract a clean middleware layer without breaking existing routes.
-
-1. **Proposal**: "Auth middleware refactor — extract JWT verification to standalone middleware. Risk: all 47 existing routes depend on auth. Rollback: keep old middleware as fallback for 2 weeks."
-2. **Spec**: Each route group listed with its current auth behavior and target behavior.
-3. **Design**: `AuthMiddleware` class, interface contract, test harness that compares old vs new behavior for each route group.
-4. **Tasks**: One task per route group, each with before/after test comparison.
-5. **Verification**: `diff --old-auth --new-auth` — all 47 routes produce identical responses.
-
-**Key insight**: The spec caught that route group "/admin" uses a different JWT audience than "/api" — a design gap that would have caused a production outage if discovered mid-implementation.
-
----
-
-## Anti-Patterns (Do NOT Do)
-
-1. **Spec after code** — Writing the spec *after* writing the code defeats the purpose. The spec must exist before code.
-2. **Vague acceptance criteria** — "Works correctly" is not acceptance criteria. Be measurable.
-3. **Skipping regression tests** — "The change is small, it won't break anything" — it will.
-4. **No rollback plan** — Every non-trivial change needs a rollback plan in the proposal.
-5. **Implementing outside the spec** — If you found something the spec missed, update the spec first.
-6. **Skipping design for "simple" changes** — Most bugs come from "simple" changes that weren't fully thought through.
-7. **Spec as a one-time document** — A spec written and never consulted again is a waste of time. Refer to it during implementation, code review, and testing.
-8. **Waterfall perfectionism** — The spec doesn't need to be perfect on the first draft. Iterate it as you learn, but lock design before implementation starts.
-
----
-
-## When NOT to Use
-
-- **Hotfixes under time pressure**: Deploying a hotfix takes priority over writing a spec. Fix, then spec the root cause.
-- **One-liner changes**: Changing a CSS color, fixing a typo, updating a comment — no spec needed.
-- **Exploratory prototyping**: Prototypes are for learning. Build one, learn, then spec the real implementation. Do NOT deploy prototypes as production code without spec.
-- **Incremental bugfixes with test coverage**: If a test already describes expected behavior and the fix is local, implement directly.
-- **Rapid hypothesis testing**: Changing one parameter in a config file to test a hypothesis — just change it and observe.
-- **Trivial internal tooling**: A one-off CLI script only you will use once — no spec.
 
 ---
 
@@ -501,6 +421,17 @@ Before moving to implementation, verify:
 - [ ] Design identifies all files to be created/modified
 - [ ] Tasks are in dependency order
 - [ ] No spec contradicts another
+
+---
+
+## Anti-Patterns (Do NOT Do)
+
+1. **Spec after code** — Writing the spec *after* writing the code defeats the purpose. The spec must exist before code.
+2. **Vague acceptance criteria** — "Works correctly" is not acceptance criteria. Be measurable.
+3. **Skipping regression tests** — "The change is small, it won't break anything" — it will.
+4. **No rollback plan** — Every non-trivial change needs a rollback plan in the proposal.
+5. **Implementing outside the spec** — If you found something the spec missed, update the spec first.
+6. **Skipping design for "simple" changes** — Most bugs come from "simple" changes that weren't fully thought through.
 
 ---
 
@@ -535,13 +466,3 @@ Before moving to implementation, verify:
 | Regression | — | Did we break existing? | Any test failure |
 | Verify | `SPEC/verify.md` | Is it truly done? | Any checklist item unmet |
 | Launch | — | — | Verification incomplete |
-
----
-
-## Cross-References
-
-- **writing-plans** — Creates implementation plans that complement SDD's task breakdown phase
-- **incremental-implementation** — Delivers code in thin vertical slices, the natural execution mode for SDD tasks
-- **test-driven-development** — TDD operates at the unit/function level (micro); SDD at the feature/project level (macro). They complement each other
-- **systematic-debugging** — Debugging methodology for when implementation reveals spec gaps
-- **spec-driven-development (this skill)** — root skill

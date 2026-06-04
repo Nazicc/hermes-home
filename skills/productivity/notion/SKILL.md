@@ -1,189 +1,128 @@
 ---
 name: notion
 description: "Use when creating and managing Notion pages, databases, and blocks via the API. Search, create, update, and query Notion workspaces directly from terminal. NOT for: non-Notion workspaces, complex database queries, or when Notion app UI is more efficient."
-category: productivity
+category: general
 ---
 
-## Purpose
+## R — Knowledge Source
 
-Create, read, update, and query Notion pages, databases, and blocks programmatically via the official Notion API. Use when you need to automate content management in Notion, sync data between tools, build custom dashboards, batch-create pages from templates, or integrate Notion with other systems via curl.
+- **API Base URL**: `https://api.notion.com/v1`
+- **Auth**: Bearer token via `Authorization: Bearer $NOTION_API_KEY`
+- **Versioning**: All requests must include `Notion-Version: 2022-06-28` (or current)
+- **Rate Limits**: 3 requests/second for most integrations; 30 requests/second for enterprise
+- **Pagination**: Cursor-based via `start_cursor` / `has_more` fields
 
-## Why This Works
+## I — Core API Patterns
 
-**1. Official REST API with Structured JSON.** Notion's API (https://api.notion.com/v1/) uses standardized JSON request/response schemas — pages become structured `page` objects with typed properties, databases support filtering/sorting queries, and blocks compose into rich documents. This makes it straightforward to build automation pipelines without reverse-engineering.
+All operations use `curl` with JSON payloads. No SDK required.
 
-**2. The R-I-A-E (Read-Identify-Apply-Emplace) Pattern.** Notion databases require a specific workflow: you must first READ the database schema (to see property types and options), IDENTIFY which properties to use, then APPLY the correct API endpoint, and EMPLACE properly formatted JSON. This pattern prevents the most common source of API errors — wrong property types.
+**Headers (always required)**:
+bash
+-H "Authorization: Bearer $NOTION_API_KEY" \
+-H "Content-Type: application/json" \
+-H "Notion-Version: 2022-06-28"
 
-**3. Block-Based Document Construction.** Every Notion page is a tree of block objects (paragraphs, headings, lists, embeds). You construct pages by nesting blocks, which maps naturally to JSON trees. Master block composition and you can generate any page structure programmatically.
 
-## Anti-Patterns
+**Error response format**:
 
-**Anti-Pattern 1: Guessing Property Types.** The most common Notion API error is using the wrong JSON structure for database properties. Always fetch a database's schema first before creating pages — property types (title, rich_text, select, multi_select, etc.) require specific JSON formats.
+{"object": "error", "status": 400, "code": "validation_error", "message": "..."}
 
-**Anti-Pattern 2: Hardcoding Integration Tokens.** Passing `secret_xxx` tokens directly in scripts exposes credentials in version control and is hard to rotate. Use environment variables (`NOTION_TOKEN`) or a secret manager.
 
-**Anti-Pattern 3: Ignoring Pagination.** The Notion API paginates list responses at 100 items per call. Not handling `has_more` and `next_cursor` silently truncates results. Always implement the pagination loop.
+### Key Endpoints
 
-## Examples
+| Operation | Endpoint | Method |
+|-----------|----------|--------|
+| Search | `/search` | POST |
+| Create Page | `/pages` | POST |
+| Get Page | `/pages/{id}` | GET |
+| Update Page | `/pages/{id}` | PATCH |
+| Archive Page | `/pages/{id}` | PATCH |
+| Create Block | `/blocks/{id}/children` | PATCH |
+| Query Database | `/databases/{id}/query` | POST |
+| Get Block | `/blocks/{id}` | GET |
+| Update Block | `/blocks/{id}` | PATCH |
 
-**Good:** Fetch a database schema to discover property types before writing data:
-```bash
-NOTION_TOKEN="your_integration_token"
-DATABASE_ID="your_database_id"
+## A1 — Common Operations
 
-curl -s "https://api.notion.com/v1/databases/$DATABASE_ID" \
-  -H "Authorization: Bearer $NOTION_TOKEN" \
-  -H "Notion-Version: 2022-06-28" \
-  | jq '.properties | to_entries[] | {name: .key, type: .value.type}'
-```
-Returns something like: `{"name": "Name", "type": "title"}, {"name": "Status", "type": "select"}` — critical for knowing what JSON to send.
-
-**Good:** Create a database page with correctly typed properties:
-```bash
-curl -s "https://api.notion.com/v1/pages" \
-  -H "Authorization: Bearer $NOTION_TOKEN" \
-  -H "Notion-Version: 2022-06-28" \
+### Search workspace
+bash
+curl -s -X POST "https://api.notion.com/v1/search" \
+  -H "Authorization: Bearer $NOTION_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{
-    "parent": { "database_id": "'$DATABASE_ID'" },
-    "properties": {
-      "Name": {
-        "title": [{ "text": { "content": "My New Task" } }]
-      },
-      "Status": {
-        "select": { "name": "In Progress" }
-      },
-      "Due Date": {
-        "date": { "start": "2026-06-15" }
-      },
-      "Priority": {
-        "select": { "name": "High" }
-      }
-    }
-  }' | jq '.'
-```
-
-**Good:** Query a database with filters and pagination (complete example):
-```bash
-echo "[" > /tmp/results.json
-has_more=true
-next_cursor=""
-while [ "$has_more" = "true" ]; do
-  body='{"filter":{"property":"Status","select":{"equals":"In Progress"}}}'
-  [ -n "$next_cursor" ] && body=$(echo "$body" | jq ". + {\"start_cursor\": \"$next_cursor\"}")
-  resp=$(curl -s "https://api.notion.com/v1/databases/$DATABASE_ID/query" \
-    -H "Authorization: Bearer $NOTION_TOKEN" \
-    -H "Notion-Version: 2022-06-28" \
-    -H "Content-Type: application/json" \
-    -d "$body")
-  echo "$resp" | jq '.results' | jq -c '.[]' >> /tmp/results.json
-  has_more=$(echo "$resp" | jq -r '.has_more')
-  next_cursor=$(echo "$resp" | jq -r '.next_cursor // ""')
-done
-echo "]" | jq -s 'add' /tmp/results.json > /tmp/all_results.json
-echo "Total results: $(jq '. | length' /tmp/all_results.json)"
-```
-
-**Good:** Create a page with rich content (blocks):
-```bash
-curl -s "https://api.notion.com/v1/pages" \
-  -H "Authorization: Bearer $NOTION_TOKEN" \
   -H "Notion-Version: 2022-06-28" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "parent": { "type": "page_id", "page_id": "'$PAGE_ID'" },
-    "properties": { "title": { "title": [{ "text": { "content": "Report" } }] } },
-    "children": [
-      { "object": "block", "type": "heading_2", "heading_2": { "rich_text": [{ "text": { "content": "Summary" } }] } },
-      { "object": "block", "type": "paragraph", "paragraph": { "rich_text": [{ "text": { "content": "Here is the report content." } }] } },
-      { "object": "block", "type": "bulleted_list_item", "bulleted_list_item": { "rich_text": [{ "text": { "content": "Key finding 1" } }] } },
-      { "object": "block", "type": "bulleted_list_item", "bulleted_list_item": { "rich_text": [{ "text": { "content": "Key finding 2" } }] } },
-      { "object": "block", "type": "divider", "divider": {} },
-      { "object": "block", "type": "callout", "callout": {
-        "rich_text": [{ "text": { "content": "Action needed" } }],
-        "icon": { "emoji": "⚠️" }
-      } }
-    ]
-  }' | jq '.'
-```
+  -d '{"query": "search term", "filter": {"property": "object", "value": "page"}}'
 
-**Bad:** Creating a page with incorrect property types:
-```bash
-# WRONG — "Status" is a select type, not a string
-curl -s "https://api.notion.com/v1/pages" \
-  -H "Authorization: Bearer $NOTION_TOKEN" \
-  -H "Notion-Version: 2022-06-28" \
+
+### Create a page
+bash
+curl -s -X POST "https://api.notion.com/v1/pages" \
+  -H "Authorization: Bearer $NOTION_API_KEY" \
   -H "Content-Type: application/json" \
+  -H "Notion-Version: 2022-06-28" \
   -d '{
-    "parent": { "database_id": "'$DATABASE_ID'" },
-    "properties": {
-      "Name": { "title": [{ "text": { "content": "Task" } }] },
-      "Status": "In Progress"  ###### WRONG — select needs { "select": { "name": "..." } }
-    }
+    "parent": {"database_id": "<DATABASE_ID>"},
+    "properties": {"<prop_name>": {"<prop_type>": "<value>"}},
+    "children": [{"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": "Hello"}}]}}]
   }'
 
-# RIGHT — property types must match the database schema
-curl -s "https://api.notion.com/v1/pages" \
-  -H "Authorization: Bearer $NOTION_TOKEN" \
-  -H "Notion-Version: 2022-06-28" \
+
+### Query a database
+bash
+curl -s -X POST "https://api.notion.com/v1/databases/<DATABASE_ID>/query" \
+  -H "Authorization: Bearer $NOTION_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{
-    "parent": { "database_id": "'$DATABASE_ID'" },
-    "properties": {
-      "Name": { "title": [{ "text": { "content": "Task" } }] },
-      "Status": { "select": { "name": "In Progress" } }
-    }
-  }'
-```
+  -H "Notion-Version: 2022-06-28" \
+  -d '{"filter": {"property": "Status", "select": {"equals": "Done"}}}'
 
-## Property Types Quick Reference
 
-| Property Type | JSON Structure |
-|---------------|----------------|
-| title | `{"title": [{"text": {"content": "..."}}]}` |
-| rich_text | `{"rich_text": [{"text": {"content": "..."}}]}` |
-| select | `{"select": {"name": "..."}}` |
-| multi_select | `{"multi_select": [{"name": "..."}]}` |
-| date | `{"date": {"start": "2026-01-01", "end": null}}` |
-| number | `{"number": 42}` |
-| checkbox | `{"checkbox": true}` |
-| email | `{"email": "user@example.com"}` |
-| phone | `{"phone_number": "+1234567890"}` |
-| url | `{"url": "https://example.com"}` |
-| relation | `{"relation": [{"id": "page-id"}]}` |
-| created_time | *(read-only, auto-set)* |
-| last_edited_time | *(read-only, auto-updated)* |
+### Get a page
+bash
+curl -s "https://api.notion.com/v1/pages/<PAGE_ID>" \
+  -H "Authorization: Bearer $NOTION_API_KEY" \
+  -H "Notion-Version: 2022-06-28"
 
-## Common Block Types
 
-| Block Type | Key Field |
-|------------|-----------|
-| paragraph | `paragraph.rich_text` |
-| heading_1/2/3 | `heading_1.rich_text` (etc.) |
-| bulleted_list_item | `bulleted_list_item.rich_text` |
-| numbered_list_item | `numbered_list_item.rich_text` |
-| to_do | `to_do.rich_text` + `to_do.checked` |
-| toggle | `toggle.rich_text` |
-| callout | `callout.rich_text` + `callout.icon` |
-| divider | `divider: {}` |
-| code | `code.rich_text` + `code.language` |
-| image | `image.external.url` or `image.type` |
-| embed | `embed.url` |
-| bookmark | `bookmark.url` |
-| quote | `quote.rich_text` |
+### Update page properties
+bash
+curl -s -X PATCH "https://api.notion.com/v1/pages/<PAGE_ID>" \
+  -H "Authorization: Bearer $NOTION_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Notion-Version: 2022-06-28" \
+  -d '{"properties": {"<prop>": {"<type>": "<value>"}}}'
 
-## When NOT to Use
 
-- **When the Notion app UI is faster** — for one-off note creation, manual entry is quicker than API calls
-- **For non-Notion workspaces** — this skill covers Notion API only, not Airtable, Coda, or other tools
-- **Complex relational database queries** — Notion's API has limited join/aggregation capabilities; use a real database instead
-- **Real-time collaboration** — Notion API has rate limits (3 requests per second); use Webhooks or the native app for live sync
-- **Importing massive data volumes** — Notion API has a 100-item pagination limit and no bulk import endpoint; break into batches
-- **When you need rich text formatting beyond bold/italic** — Notion API supports basic annotations only; for complex layouts, use the Notion app directly
+### Append blocks to a page
+bash
+curl -s -X PATCH "https://api.notion.com/v1/blocks/<BLOCK_ID>/children" \
+  -H "Authorization: Bearer $NOTION_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Notion-Version: 2022-06-28" \
+  -d '{"children": [{"object": "block", "type": "heading_1", "heading_1": {"rich_text": [{"type": "text", "text": {"content": "Title"}}]}}]}'
 
-## Cross-References
 
-- **google-workspace** (skills/integration/google-workspace/SKILL.md): Alternative document management and automation via Google APIs
-- **obsidian** (skills/note-taking/obsidian/SKILL.md): Local-first note-taking alternative that pairs well with version control
-- **siyuan** (skills/siyuan/SKILL.md): Self-hosted knowledge base alternative with local API access
-- **scrapling** (skills/optional-skills/scrapling/SKILL.md): Web scraping to programmatically populate Notion databases with external data
+## A2 — Trigger Scenarios
+
+- User says "create a Notion page for [topic]" → use `POST /pages`
+- User says "query my tasks database" → use `POST /databases/{id}/query`
+- User says "search for pages containing [term]" → use `POST /search`
+- User says "add a todo item to my Notion list" → use `POST /pages` or `PATCH /blocks/{id}/children`
+- User says "update the status of [item]" → use `PATCH /pages/{id}`
+
+## E — Edge Cases
+
+- **Missing API key**: Response `{"object": "error", "code": "unauthorized"}` → ensure `NOTION_API_KEY` is set before calling
+- **Invalid database_id**: Response `{"object": "error", "code": "validation_error"}` → verify parent ID format (32 hex chars with hyphens)
+- **Rate limited**: Response `429 Too Many Requests` → back off and retry with `Retry-After` header or exponential backoff
+- **Internal errors (500)**: Notion internal errors are common → retry with exponential backoff
+- **Archived page**: Cannot update archived pages → unarchive first with `PATCH /pages/{id}` + `"archived": false`
+- **Rich text**: All text must be wrapped in `{"type": "text", "text": {"content": "..."}}` structure
+- **Database schema**: Query filter properties must match the database's actual property types (select, text, date, etc.) and property names are case-sensitive
+- **Title property**: Use `"title"` array, not `"name"`
+
+## B — Behavioral Notes
+
+- Always include `Notion-Version` header — omitting it returns 404
+- Block children are appended, not replaced (use `PATCH /blocks/{id}/children?append=true`)
+- Parent for a new page can be a `database_id` (template in DB) or `page_id` (child page)
+- Emoji icons: use `"icon": {"type": "emoji", "emoji": "🎯"}` in page creation
+- Archived pages/databases still exist but are filtered out by default

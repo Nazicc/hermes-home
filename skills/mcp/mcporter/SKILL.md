@@ -1,22 +1,12 @@
 ---
 name: mcporter
-description: "Use hermes mcp subcommands to list, add, test, configure, and manage MCP server connections — stdio and HTTP transports, interactive prompts, per-server tool enablement."
+description: "Use the mcporter CLI (hermes mcp subcommands) to list, configure, and manage MCP server connections in hermes-agent. Covers hermes mcp add/list/test/serve/config for both stdio and HTTP transports, interactive prompts, per-server tool enablement, and standalone mcporter CLI usage."
 category: general
 ---
 
-# mcporter — MCP Server Management for Hermes
-
-## Why This Works
-
-**Concept 1: The `hermes mcp` subcommands provide a unified interface for all MCP server lifecycle management.** Adding (`hermes mcp add`), testing (`hermes mcp test`), listing (`hermes mcp list`), configuring tools (`hermes mcp configure`), and removing (`hermes mcp remove`) all share the same config storage (`~/.hermes/config.yaml` `mcpServers` section) and the same transport-agnostic semantics. You don't need to edit YAML manually or remember different protocols.
-
-**Concept 2: Stdio transport is the simplest and most reliable mode for local MCP servers.** Hermes spawns the server as a child process over stdin/stdout — no network ports, no daemon management, no port conflicts. This works for any CLI tool that speaks MCP stdio protocol (sirchmunk, DeepCode, native servers). The server lifecycle is tied to the Hermes session.
-
-**Concept 3: Interactive tool selection prevents namespace pollution.** When adding a server, `hermes mcp add` lets you accept all tools (`Y`), reject all (`n`), or selectively enable tools (`select`). This avoids loading dozens of irrelevant tools from servers that expose their entire API surface.
-
 ## Quick Reference
 
-```bash
+bash
 hermes mcp list                        # List all configured MCP servers
 hermes mcp add <name>                   # Add a new MCP server (interactive)
 hermes mcp test <name>                  # Test connectivity to a server
@@ -24,28 +14,28 @@ hermes mcp serve                        # Run hermes-agent as an MCP server
 hermes mcp config <name>                # Show current server configuration
 hermes mcp configure <name>             # Interactively enable/disable specific tools
 hermes mcp remove <name>                # Remove a configured server
-```
+
 
 ## Discovery & Status
 
-```bash
+bash
 # List all configured MCP servers (shows name, transport, tools, status)
 hermes mcp list
 
 # Get help on a specific subcommand
 hermes mcp --help
 hermes mcp add --help
-```
+
 
 Example output:
 
-```
+
 MCP Servers:
 
   Name             Transport                      Tools        Status    
   ──────────────── ────────────────────────────── ──────────── ──────────
   sirchmunk        sirchmunk mcp serve            all          ✓ enabled
-```
+
 
 Status values: `enabled` (✓), `disabled`, or error state.
 
@@ -53,27 +43,27 @@ Status values: `enabled` (✓), `disabled`, or error state.
 
 ### Stdio Transport
 
-```bash
+bash
 hermes mcp add <name> --command <cmd> --args <args...> --env KEY=VALUE [--auth {oauth|header}]
-```
+
 
 **stdio mode**: hermes spawns the server process and communicates over stdin/stdout. The server process must be available in PATH.
 
 **Example — sirchmunk MCP server:**
-```bash
+bash
 hermes mcp add sirchmunk \
   --command sirchmunk \
   --args mcp serve \
   --env SIRCHMUNK_WORK_PATH=/Users/can/.hermes/sirchmunk-data
-```
+
 
 **Example — DeepCode MCP:**
-```bash
+bash
 hermes mcp add deepcode \
   --command /Users/can/.openharness-venv/bin/python \
   --args /Users/can/DeepCode/deepcode_mcp.py \
   --env DEEPCODE_PORT=8000
-```
+
 
 The `hermes mcp add` command will:
 1. Start the MCP server process to inspect its capabilities.
@@ -81,37 +71,37 @@ The `hermes mcp add` command will:
 3. Save the server config to `~/.hermes/config.yaml` under `mcpServers`.
 
 **Non-interactive add (scripted):**
-```bash
+bash
 echo "" | hermes mcp add sirchmunk --command sirchmunk --args mcp serve
 # Empty stdin → defaults to Y (enable all)
-```
+
 
 ### HTTP/SSE Transport
 
-```bash
+bash
 hermes mcp add <name> --url <http-or-https-endpoint> [--auth header]
-```
+
 
 **Example — remote HTTP MCP server:**
-```bash
+bash
 hermes mcp add remote-mcp \
   --url https://mcp.example.com:8080/mcp \
   --auth header \
-  --env API_KEY=***
-```
+  --env API_KEY=sk-...
+
 
 ### Auth Options
 
-```bash
+bash
 hermes mcp add <name> --command <cmd> --auth oauth   # OAuth 2.0
 hermes mcp add <name> --command <cmd> --auth header  # API key header
-```
+
 
 ### Alternative: Manual Config Edit
 
 If `hermes mcp add` is not available (older hermes version), edit `~/.hermes/config.yaml` directly:
 
-```yaml
+yaml
 mcpServers:
   <server-name>:
     command: <binary>
@@ -120,42 +110,32 @@ mcpServers:
       - serve
     env:
       KEY: value
-```
+
 
 Then restart hermes. Run `hermes mcp list` to verify.
 
-## Anti-Patterns
-
-**Anti-Pattern 1: Forgetting required env vars when adding a server.** `hermes mcp add sirchmunk --command sirchmunk --args mcp serve` without `--env SIRCHMUNK_WORK_PATH=...` — the server silently fails during discovery because required env vars are missing. Always review what env vars the server needs before adding.
-
-**Anti-Pattern 2: Using HTTP URL for a stdio server.** Adding sirchmunk with `--url http://localhost:9283` when it speaks stdio protocol. The transport mismatch causes a connection failure. Check the server's documentation: stdio servers use `--command`, HTTP servers use `--url`.
-
-**Anti-Pattern 3: Duplicate server registrations.** Adding the same MCP server multiple times creates duplicate entries. Run `hermes mcp list` first to check existing registrations. If a server already exists, remove it first with `hermes mcp remove <name>` before re-adding.
-
-**Anti-Pattern 4: Blindly enabling all tools from a server.** A server exposing 30 tools loads all of them into the Hermes namespace. Use `select` during `hermes mcp add` or `hermes mcp configure <name>` afterward to enable only the tools you need.
-
 ## Testing, Managing, and Removing Servers
 
-```bash
+bash
 hermes mcp test <name>       # Test MCP server connection and discover tools
 hermes mcp configure <name>   # Interactively enable/disable specific tools
 hermes mcp config <name>     # Show current server configuration
 hermes mcp remove <name>     # Remove a server
-```
+
 
 ## Running hermes-agent as an MCP Server
 
 Expose hermes-agent conversations as an MCP server (for use by Claude Desktop, Cursor, etc.):
 
-```bash
+bash
 hermes mcp serve [--url <listen-url>]
-```
+
 
 ## Configuration File
 
 Servers are stored in `~/.hermes/config.yaml` under `mcpServers`:
 
-```yaml
+yaml
 mcpServers:
   <server-name>:
     command: <executable>
@@ -165,7 +145,7 @@ mcpServers:
     env:
       KEY: VALUE
     tools: all  # or list specific tool names
-```
+
 
 ## Stdio vs HTTP Transport
 
@@ -180,21 +160,21 @@ The `mcporter` CLI is a standalone tool for ad-hoc MCP interactions (install via
 
 ### List servers
 
-```bash
+bash
 mcporter servers list
-```
+
 
 ### List tools on a server
 
-```bash
+bash
 mcporter tools list --server <server_name>
-```
+
 
 ### Call a tool
 
-```bash
+bash
 mcporter tools call --server <server_name> --tool <tool_name> [--json-args '{"key": "value"}']
-```
+
 
 - Use `--json-args '{}'` for tools that take no arguments.
 - For tools with positional args, pass them as a JSON array: `--json-args '[arg1, arg2]'`.
@@ -204,7 +184,7 @@ mcporter tools call --server <server_name> --tool <tool_name> [--json-args '{"ke
 
 mcporter reads from `~/.config/mcporter/config.json` (or `$MCPORTER_CONFIG`):
 
-```json
+
 {
   "mcpServers": {
     "my-server": {
@@ -214,11 +194,11 @@ mcporter reads from `~/.config/mcporter/config.json` (or `$MCPORTER_CONFIG`):
     }
   }
 }
-```
+
 
 For HTTP servers:
 
-```json
+
 {
   "mcpServers": {
     "http-example": {
@@ -226,83 +206,63 @@ For HTTP servers:
     }
   }
 }
-```
+
 
 ### HTTP Endpoints (Server Mode)
 
 mcporter can serve tools over HTTP:
 
-```bash
+bash
 mcporter serve --port 8080 --server <server_name>
-```
+
 
 This starts an HTTP server with SSE streaming at `/mcp`. Clients connect via:
 
-```bash
+bash
 mcporter tools call --url http://localhost:8080/mcp --tool <tool_name> --json-args '{}'
-```
+
 
 ### Auth Headers
 
 Pass headers to MCP HTTP endpoints:
 
-```bash
+bash
 mcporter tools call --url https://api.example.com/mcp \
-  --header "Authorization: Bearer *** \
+  --header "Authorization: Bearer $TOKEN" \
   --tool <tool_name>
-```
+
 
 ### CLI Reference
 
-```bash
+bash
 mcporter --help
 mcporter servers --help
 mcporter tools --help
 mcporter config --help
 mcporter serve --help
-```
 
-## Examples
-
-**Good:** You want to add the sirchmunk search server. You run `hermes mcp add sirchmunk --command sirchmunk --args mcp serve --env SIRCHMUNK_WORK_PATH=/Users/can/.hermes/sirchmunk-data`, accept the single tool at the prompt, and verify with `hermes mcp list` showing `✓ enabled`. The server is ready.
-
-**Good:** A server was added with wrong env vars and fails to discover tools. You run `hermes mcp remove <name>`, then `hermes mcp add <name>` with corrected `--env` flags. You test with `hermes mcp test <name>` and see all tools discovered.
-
-**Good:** You want to expose hermes-agent to Claude Desktop. You run `hermes mcp serve --url http://localhost:8080` and configure Claude Desktop's `claude_desktop_config.json` to point to `http://localhost:8080/mcp`. Claude can now invoke Hermes tools.
-
-**Bad:** You add a remote HTTP MCP server with `hermes mcp add my-server --command my-server --args serve`, but the server runs on HTTP, not stdio. The add command hangs because hermes waits for stdin/stdout communication from a process that doesn't speak stdio MCP. Use `--url` for HTTP servers.
-
-## When NOT to Use
-
-**Writing new MCP servers** — This skill covers existing MCP server configuration and management. To write new MCP servers (Python, TypeScript, or custom), use the `native-mcp` skill and FastMCP/mcp-python-sdk.
-
-**Debugging MCP protocol-level failures** — If `hermes mcp test` succeeds but tools return protocol errors or malformed responses, use the `mcp-debugging` skill for systematic JSON-RPC debugging.
-
-**Non-Hermes MCP clients** — This skill focuses on `hermes mcp` subcommands. For configuring MCP servers in Claude Desktop, Cursor, or other clients, consult their documentation (config files and formats differ).
-
-**Large-scale MCP fleet management** — `hermes mcp` manages individual servers. For orchestrating dozens of MCP services across machines, consider a service mesh or container orchestration approach.
 
 ## Integration Examples
 
 ### sirchmunk MCP Integration
 
-```bash
+bash
 hermes mcp add sirchmunk \
   --command sirchmunk \
   --args mcp serve \
   --env SIRCHMUNK_WORK_PATH=/Users/can/.hermes/sirchmunk-data
-```
+
 
 sirchmunk exposes 1 tool: `sirchmunk_search`. Accept all tools at the prompt.
 
 ### deepcode MCP Integration
 
-```bash
+bash
 hermes mcp add deepcode \
   --command /Users/can/.openharness-venv/bin/python \
   --args /Users/can/DeepCode/deepcode_mcp.py \
   --env DEEPCODE_PORT=8000
-```
+
 
 DeepCode exposes 9 tools including planning, requirements, and code generation.
 
@@ -326,8 +286,22 @@ DeepCode exposes 9 tools including planning, requirements, and code generation.
 - **Wrong transport type**: Using `--url` for a local stdio server (or vice versa) will fail. Match the transport to the server type.
 - **Duplicate add**: `hermes mcp list` before adding. If already exists, remove first: `hermes mcp remove <name>`.
 
-## Cross-References
+## Common Mistakes
 
-- **mcp/native-mcp** (skills/mcp/native-mcp/SKILL.md): Write custom MCP servers in Python — server code architecture, FastMCP usage, and launchd auto-start.
-- **mcp/deerflow-mcp-integration** (skills/mcp/deerflow-mcp-integration/SKILL.md): Real-world MCP integration patterns using DeerFlow as a case study — env vars, SkillClaw routing, and common gotchas.
-- **mcp-debugging** (skills/mcp-debugging/SKILL.md): Systematic debugging when MCP tools fail — protocol inspection, tool discovery issues, and JSON-RPC error analysis.
+### Wrong: Forgetting to set required env vars
+
+bash
+hermes mcp add sirchmunk --command sirchmunk --args mcp serve
+# WRONG if the server requires SIRCHMUNK_WORK_PATH — will fail silently
+
+
+**Always pass required env vars with `--env`.**
+
+### Wrong: Using HTTP URL for a local stdio server
+
+bash
+hermes mcp add sirchmunk --url http://localhost:9283
+# WRONG if sirchmunk uses stdio, not HTTP
+
+
+**Match the transport to the server's capabilities.**

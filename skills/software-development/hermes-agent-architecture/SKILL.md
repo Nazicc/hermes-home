@@ -4,245 +4,24 @@ description: "Hermes Agent 项目架构 — cli.py、run_agent.py、HermesCLI、
 category: general
 ---
 
-## Purpose
-
-Understanding Hermes Agent architecture prevents the most common development mistakes: placing MCP servers in wrong directories (they won't persist across git clones), creating independent launchd plists for MCP servers (they're subprocesses of the Gateway and get killed), or putting business logic directly in cli.py (it belongs in AIAgent/routes). This skill documents the actual codebase structure so you add features and fix bugs correctly the first time.
-
----
-
-## Why This Works
-
-### 1. Process Isolation Prevents Cascade Failures
-
-The Gateway-to-MCP-servers process model is deliberately one-directional: Gateway spawns MCP servers as disposable stdio subprocesses, not the other way around. This means:
-
-- A crashing MCP server never takes down the Gateway
-- Gateway restarts automatically restart all MCP servers without user intervention
-- Memory leaks in a long-running MCP server are contained to that subprocess
-
-This is why launchd plists should only exist for the Gateway (and Sirchmunk) — everything else is a child process that gets cleaned up on Gateway restart.
-
-### 2. Config-Driven Discovery Reduces Boilerplate
-
-The `config.yaml` `mcp_servers` node and skills discovery path form a two-level registry system: config declares what exists, and the filesystem determines what's loaded. This means:
-
-- Adding a new MCP server is one `hermes mcp add` command (writes one YAML block)
-- Adding a new skill is one SKILL.md file (no registration needed)
-- Removing either is a single operation
-
-No database migrations, no import statements, no plugin registration hooks. The filesystem IS the registry.
-
-### 3. state.db as Single Source of Truth
-
-Session JSON files only contain message text. Token counts, end_reason, tool_call_count, compression_count — these live in state.db. When you need to answer "how many tokens did we use today" or "what's crashing," query state.db directly. This single-source design avoids the classic problem of splitting telemetry across files that can get out of sync.
-
----
-
-## Anti-Patterns (Do NOT Do)
-
-1. **Stashing MCP Servers Outside the Repo** — Placing MCP server code in `~/.hermes/skills/` or any path not under `~/.hermes/hermes-agent/mcp-servers/`. A repo clone or `git clean` destroys uncommitted code. Always commit MCP servers to the repo.
-
-2. **Independent launchd Plists for MCP Servers** — Creating `~/Library/LaunchAgents/com.hermes.myserver.plist` for an MCP server that should be a Gateway child process. This leads to port conflicts, duplicate instances, and orphaned processes when Gateway restarts.
-
-3. **Business Logic in cli.py** — Writing command handlers directly in `HermesCLI.build_parser()` or command functions. Business logic belongs in `AIAgent` or dedicated `agent/*_commands.py` modules. CLI is a thin presenter layer.
-
-4. **Reading Session JSON for Metrics** — Parsing `~/.hermes/sessions/*.json` for token counts or end_reason. These files are message blobs. Use state.db SQLite queries instead — it has the actual metrics in indexed columns.
-
-5. **Direct `sys.exit()` in Command Handlers** — Calling `sys.exit(1)` from a command handler kills the Gateway process. Use `raise click.Abort()` or return an error object instead.
-
----
-
-## Examples
-
-### Example 1: Adding a New MCP Server Correctly (Good)
-
-**Context**: You built a new `gitanalyzer-mcp` package that wraps Git analysis tools.
-
-**Correct approach**:
-1. Place the code at `~/.hermes/hermes-agent/mcp-servers/gitanalyzer-mcp/`
-2. Register with `hermes mcp add gitanalyzer --command python3 --args "-m mcp_servers.gitanalyzer_mcp"`
-3. Verify: `hermes mcp list` shows `gitanalyzer | python3 -m … | ✓ enabled`
-4. Commit: `cd ~/.hermes/hermes-agent && git add mcp-servers/gitanalyzer-mcp/ && git commit`
-
-**Result**: A `git clone` on another machine pulls the server automatically. No manual plist file. No port conflicts.
-
-**Why this works**: The code lives inside the Hermes repo (not a random `~/.hermes/skills/` dir), and the Gateway manages its lifecycle.
-
-### Example 2: Wrong Directory, Lost MCP Server (Bad)
-
-**Context**: You set up a Sirchmunk search MCP server.
-
-**Mistake**: You placed the Sirchmunk adapter script at `~/.hermes/custom-servers/sirchmunk.py` and added it to `config.yaml` manually.
-
-**What happened**: After running `hermes update` (which does `git pull` on the Hermes repo), the `git pull` succeeded but your `custom-servers/` directory outside the repo was untouched. However, your next `git clean -df` in the Hermes repo didn't delete it, so you thought it was safe — until you reinstalled Hermes on a new machine and forgot about `custom-servers/`.
-
-**Why this failed**: Any code that lives outside the Hermes repo won't survive a fresh install or machine migration. The single rule is: *code that the agent needs goes in the Hermes repo*.
-
-### Example 3: Launchd Plist for an MCP Subprocess (Bad)
-
-**Context**: A developer set up a launchd plist for a MCP server thinking it needs to be persistent.
-
-**Mistake**: Created `~/Library/LaunchAgents/com.hermes.deerflow-gateway.plist` for a DeerFlow MCP server.
-
-**What happened**: The launchd plist started a second DeerFlow MCP process (port 8001) independently of the Gateway. When the Gateway also spawned its own DeerFlow MCP, two instances ran simultaneously, both trying to bind the same port. Gateway logs showed `EEXIST: Address already in use`.
-
-**Why this failed**: MCP servers are children of the Gateway. When the Gateway starts, it spawns every configured MCP server. A separate launchd plist creates a duplicate. The correct fix is to remove the plist and let the Gateway manage the lifecycle.
-
----
-
-## When NOT to Use
-
-### Excluded by Domain
-
-- **General Hermes usage** (config, chat, auth) → use `hermes-agent` skill
-- **MCP server debugging** (crashes, timeouts) → use `mcp-debugging` skill
-- **Evolver integration** (self-evolution, skill upgrades) → use `hermes-evolver-integration` skill
-- **SimpleMem MCP setup** → use `simplemem-integration` skill
-- **Skill evolution** (creating/modifying skills) → use `skills-evolution-from-research` skill
-
-### Boundary Conditions
-
-- **Don't use for writing agent prompts** — This skill documents the codebase, not prompting patterns
-- **Don't use for user-facing troubleshooting** — If a user asks "why is Hermes slow," use `hermes-diagnostics` instead
-- **Don't use for gateway deployment to new environments** — Use `hermes-atropos-environments` for deployment contexts
-- **Don't use when you just need to list skills** — Use `hermes skills list` or the `skills_list` tool
-
----
-
 ## Project Structure Overview
 
 
 hermes-agent/
 ├── cli.py                  # CLI entry point, HermesCLI class
 ├── run_agent.py            # Agent runtime core, AIAgent class
-├── model_tools.py          # Tool orchestration — post_tool_call hook fires here (~L996)
-├── toolsets.py             # Toolset definitions, _HERMES_CORE_TOOLS
-├── hermes_state.py         # SessionDB — SQLite session store (FTS5)
 ├── gateway/                # Gateway server (HTTP API + MCP client)
-│   ├── run.py              # Gateway HTTP server
-│   ├── session.py          # SessionStore — conversation persistence
-│   └── platforms/          # Adapters: telegram, discord, slack, whatsapp, ...
+│   └── run.py              # Gateway HTTP server
 ├── agent/
-│   ├── conversation_loop.py  # Main agent loop — on_session_end, compression logic
-│   ├── tool_executor.py      # Tool dispatch and execution isolation
-│   ├── tool_dispatch_helpers.py # Tool result message formatting
-│   ├── skill_commands.py     # /skill-name command routing
-│   ├── prompt_builder.py     # System prompt assembly
-│   ├── context_compressor.py # Auto context compaction
-│   └── prompt_caching.py     # Anthropic prompt caching
-├── hermes_cli/
-│   └── plugins.py          # Plugin system — PluginContext, 15 hooks, register/invoke
+│   └── skill_commands.py   # /skill-name command routing
 ├── tools/
-│   ├── registry.py          # Central tool registry (schemas, handlers, dispatch)
-│   ├── mcp_tool.py          # MCP client (~1050 lines)
-│   └── ...                  # terminal_tool.py, file_tools.py, web_tools.py, etc.
-├── plugins/                 # Installed plugins (disk-cleanup, observability/langfuse)
-│   ├── disk-cleanup/
-│   │   ├── plugin.yaml     # Plugin manifest (name, hooks, schedule)
-│   │   └── __init__.py     # Pre/post tool call hooks
-│   └── observability/
-│       └── langfuse/
-│           └── __init__.py
+│   └── skills_tool.py      # SKILL.md parsing + tool registration
 ├── cron/
 │   └── scheduler.py        # Scheduled task dispatcher
 ├── mcp-servers/            # MCP server implementations (git-tracked)
 ├── skills/                 # Built-in skills
-├── tests/                  # Pytest suite
-├── ui-tui/                 # Ink (React) terminal UI
-├── tui_gateway/            # Python JSON-RPC backend for TUI
-├── acp_adapter/            # ACP server for VS Code/Zed/JetBrains
-└── environments/           # RL training environments (Atropos)
+└── tests/                 # Test suite
 
-
-## Plugin System Architecture (hermes_cli/plugins.py)
-
-The plugin system provides **15 lifecycle hooks** that plugins can register for. This is the runtime bridge between real agent execution and the self-evolution pipeline — **no plugin currently connects them**, which is the critical gap.
-
-### Key Classes
-
-- **`PluginContext`** (line 286) — per-plugin context: name, config, enabled/disabled, hook registrations
-- **`PluginManager`** (line 1007) — singleton: discovers plugins from `plugins/` dirs, registers handlers, invokes hooks
-
-### Available Hooks (15 total)
-
-| Hook | Trigger Point | Current Registrants |
-|------|---------------|---------------------|
-| `on_startup` | Agent initialization | disk-cleanup (start periodic sweep) |
-| `on_shutdown` | Agent shutdown | disk-cleanup (stop timer) |
-| `pre_tool_call` | Before each tool invocation | disk-cleanup (check disk space) |
-| `post_tool_call` | After each tool result received | evolution-recorder (captures runtime data for self-evolution) |
-| `on_session_start` | New conversation begins | langfuse observability, evolution-recorder (initialize per-turn tracking) |
-| `on_session_end` | Conversation finishes | langfuse observability, evolution-recorder (persist session summary to evolution.db) |
-| `message_interceptor` | Between model response & rendering | langfuse |
-| `on_error` | Unhandled exception | None |
-| `config_updated` | Config file changes | None |
-| `on_model_change` | Model switch | None |
-| `on_tool_result` | Tool execution completed | None |
-| `before_send` | Before message sent to platform | None |
-| `after_send` | After message sent to platform | None |
-| `on_compression` | Context compression triggered | None |
-| `on_cron_tick` | Cron job tick | None |
-
-### Hook Registration Pattern
-
-```python
-register_hook(plugin_name, hook_name, priority, handler_func)
-# Priority: lower = runs first (100 = normal)
-# Invocation: invoke_hook(name, *args, **kwargs) → sorted handlers called
-```
-
-### Where Hooks Fire (Hardcoded)
-
-- **`post_tool_call`** — `model_tools.py:~L996`, inside `handle_function_call()`, right after tool returns
-- **`on_session_end`** — `agent/conversation_loop.py`, session closure section (~L700+)
-- **`pre_tool_call`** — `agent/tool_executor.py`, before tool dispatch
-- **`message_interceptor`** — after model response, before user delivery
-
-### Plugin Discovery
-
-1. `~/.hermes/hermes-agent/plugins/` — repo-tracked first-party plugins  
-2. `~/.hermes/plugins/` — user-installed plugins
-
-Each plugin: `plugin.yaml` (manifest) + `__init__.py` (handlers)
-
-### Self-Evolution 3-Layer Bridge (Implemented June 3, 2026)
-
-```diff
-Layer 1: Plugin System (runtime hook firing)
--    ↓ post_tool_call fires but NO plugin captures data
-+    ↓ evolution-recorder captures tool data
-Layer 2: SimpleMem Evolution (~/.hermes/simplemem_evolution/evolution.db)
--    ↓ 530 records exist, all synthetic — none from runtime capture
-+    ↓ 531+ records — runtime captures being written via EvolutionStore
-Layer 3: Evolution Pipeline (~/.hermes/hermes-agent-self-evolution/)
--    ↓ dataset_builder.py:BuildFromSessionDB() is a STUB
-+    → dataset_builder.py:BuildFromSessionDB() is still a STUB
-```
-
-**Status (June 3, 2026):**
-1. ✅ `evolution-recorder` plugin exists at `~/.hermes/hermes-agent/plugins/evolution-recorder/` — 3 files: `plugin.yaml`, `__init__.py`, `evolution_recorder.py`
-2. ✅ Registers `post_tool_call`, `on_session_start`, `on_session_end` hooks
-3. ✅ Writes tool executions and session summaries to `evolution.db` via `EvolutionStore.upsert()`
-4. ✅ Config-enabled via `hermes plugins enable evolution-recorder` (requires `chflags nouchg` first on macOS with immutable flag)
-5. ❌ `dataset_builder.py:BuildFromSessionDB()` is still a stub — evolution.db data cannot yet reach the GEPA optimizer
-6. ❌ No bridge from evolution.db → evolution training pipeline (Layer 2 → Layer 3 gap)
-
-**Design reference:** See `hermes-evolver-integration` skill for the full architecture mapping,
-or `references/evolution-recorder-bridge.md` for implementation details and verification procedure.
-
-### Config File Warning (macOS)
-
-`~/.hermes/config.yaml` may have the `uchg` (user immutable) flag on macOS:
-```bash
-ls -lO ~/.hermes/config.yaml     # Check: 'uchg' in flags column
-chflags nouchg ~/.hermes/config.yaml  # Remove flag to edit
-# ... make changes (e.g. hermes plugins enable foo) ...
-chflags uchg ~/.hermes/config.yaml    # Re-lock (optional)
-```
-This flag prevents `hermes plugins enable` and `hermes mcp add` from writing to config. Try those commands
-first — if they fail silently, check and remove the flag.
-
----
 
 ## Architecture Diagram
 
@@ -614,15 +393,140 @@ Skills are matched by front-matter YAML headers:
 | Gateway logs | `~/.hermes/logs/gateway.log` |
 | Sirchmunk daemon | `~/Library/LaunchAgents/com.hermes.sirchmunk.plist` |
 
----
+## When NOT to use this skill
 
-## Cross-References
+- **General Hermes usage** → use `hermes-agent` skill
+- **MCP server debugging** → use `mcp-debugging` skill
+- **Evolver integration** → use `hermes-evolver-integration` skill
+- **SimpleMem MCP setup** → use `simplemem-integration` skill
+- **Skill evolution** → use `skills-evolution-from-research` skill
 
-- **hermes-agent** — End-user CLI usage guide (complementary: this skill is for developers modifying Hermes)
-- **hermes-diagnostics** — state.db queries and health reports for actual runtime telemetry
-- **native-mcp** — MCP protocol deep-dive and configuration for adding HTTP MCP servers
-- **mcp-debugging** — Debug MCP server crashes and timeouts during development
-- **skills-evolution-from-research** — Skill evolution framework when adding new skills to the system
-- **launchd-service-management** — Correct launchd plist creation for Gateway persistence
-- **hermes-evolver-integration** — Hermes + Evolver bridge for self-evolution
-- **systematic-debugging** — Debugging approach for runtime issues discovered via state.db
+## Self-Evolution Architecture (Three-Layer System)
+
+Hermes Agent has a three-layer self-evolution system that runs at different timescales:
+
+```
+Layer 1: Per-Turn Background Review  (agent/background_review.py, 597 lines)
+Layer 2: Context Compression         (agent/conversation_compression.py, 755 lines)
+Layer 3: Curator Skill Maintenance   (agent/curator.py, 1800 lines)
+```
+
+### Layer 1: Background Review
+
+**Files:** `agent/background_review.py` + `run_agent.py:AIAgent._spawn_background_review`
+
+After every turn, if trigger conditions are met, a daemon thread forks a fresh `AIAgent` to review the conversation and update memory/skills autonomously.
+
+**Trigger conditions** (defined in `agent/conversation_loop.py:run_conversation`):
+- **Memory review**: Every `_memory_nudge_interval` turns (default 10) — turn-based counter in `agent._turns_since_memory`
+- **Skill review**: Every `_skill_nudge_interval` tool iterations (default 10) — iteration-based counter in `agent._iters_since_skill`
+- Both require `final_response` and no interruption to fire
+
+**Initialization** (`agent/agent_init.py` lines 1067-1069):
+```python
+agent._memory_nudge_interval = 10
+agent._turns_since_memory = 0
+agent._iters_since_skill = 0
+```
+
+**Fork inheritance strategy** (key optimization — ~26% cost reduction from prefix cache reuse, see issue #25322 / PR #17276):
+- Inherits parent's live runtime (provider, model, base_url, api_key, credential_pool) — avoids re-resolving from env vars
+- Inherits `_cached_system_prompt` verbatim → same Anthropic prefix cache key
+- `skip_memory=True` prevents external memory provider side effects
+- Re-binds `_memory_store`, `_memory_enabled`, `_user_profile_enabled` from parent
+- Sets `suppress_status_output = True` to keep fork lifecycle messages silent
+
+**Three review prompts** (`agent/background_review.py`):
+
+| Prompt | Lines | Focus | When used |
+|--------|-------|-------|-----------|
+| `_MEMORY_REVIEW_PROMPT` | ~10 | User persona/preferences | `review_memory=True` only |
+| `_SKILL_REVIEW_PROMPT` | ~115 | Skill updates, 4-tier priority | `review_skills=True` only |
+| `_COMBINED_REVIEW_PROMPT` | ~83 | Both (condensed) | Both triggers fired |
+
+**Skill review 4-tier update priority:**
+1. Patch the currently-loaded skill (from `skill_view` or `/skill-name`)
+2. Patch an existing umbrella skill (scan library via `skills_list`)
+3. Add a support file under existing umbrella (`references/`, `templates/`, `scripts/`)
+4. Create a new class-level umbrella (last resort — prefer extending existing)
+
+**Protected content (DO NOT capture as skills):**
+- Environment-dependent failures (missing binaries, path errors)
+- Negative claims about tools ("X tool is broken")
+- Session-specific transient errors that self-resolved
+- One-off task narratives
+
+**Safety:**
+- Auto-denies dangerous commands via `_bg_review_auto_deny` callback
+- Tool whitelist: only `memory` + `skill_manage` tools allowed (enforced per-thread via `set_thread_tool_whitelist`)
+- All stdout/stderr redirected to `/dev/null`
+- Finally block ensures memory provider shutdown + agent close + callback cleanup
+
+**Call flow:**
+```
+conversation_loop.py:4670  →  agent._spawn_background_review()
+                                  →  spawn_background_review_thread()
+                                       →  _run_review_in_thread() [daemon]
+                                            →  fork AIAgent + whitelist
+                                            →  run_conversation(COMBINED_REVIEW_PROMPT)
+                                            →  summarize_background_review_actions()
+                                            →  print "💾 Self-improvement review: ..."
+```
+
+### Layer 2: Context Compression
+
+**File:** `agent/conversation_compression.py` (755 lines)
+
+When conversation exceeds model context window threshold, auxiliary model summarizes:
+- Uses compression lock (`_compression_lock_holder`) with pid:tid:agent-instance:nonce
+- Background review forks use same lock — ensures compression and review don't collide
+
+### Layer 3: Curator (Skill Library Maintenance)
+
+**File:** `agent/curator.py` (1800 lines)
+
+Background maintenance orchestrator for agent-created skills:
+- Runs when agent is idle and last curator run > `interval_hours` ago
+- Called from `cli.py` and `gateway/run.py` via `maybe_run_curator(idle_for_seconds=..., on_summary=...)`
+
+**Time parameters:**
+```python
+DEFAULT_INTERVAL_HOURS = 24 * 7    # 7 days between curator runs
+DEFAULT_MIN_IDLE_HOURS = 2          # agent must be idle 2h before curator fires
+DEFAULT_STALE_AFTER_DAYS = 30       # skill → stale after 30 days inactivity
+DEFAULT_ARCHIVE_AFTER_DAYS = 90     # stale → archive after 90 days
+```
+
+**Key invariants:**
+- Only touches agent-created skills (via `tools/skill_usage.is_agent_created`)
+- Never deletes — only archives (archive is recoverable)
+- Pinned skills bypass all auto-transitions
+- Uses auxiliary client; never touches main session's prompt cache
+- State persisted in `~/.hermes/skills/.curator_state`
+
+### Known Gaps
+
+- `self-improvement-loop.md` reference doc is referenced in `background_review.py` docstring but missing on disk
+- No cross-session pattern mining — background review only evaluates current turn
+- No curator ↔ background_review coordination (could modify same skill concurrently)
+- No metrics tracking self-evolution effectiveness (improvement rate vs "nothing to save" frequency)
+- No A/B testing for review prompt quality
+
+## Related Skills
+
+- `hermes-agent` — End-user CLI usage guide
+- `hermes-diagnostics` — state.db queries and health reports
+- `native-mcp` — MCP protocol deep-dive configuration
+- `mcp-debugging` — MCP server debugging
+- `skills-evolution-from-research` — Skill evolution framework
+- `launchd-service-management` — Creating launchd plists for Gateway persistence
+- `hermes-evolver-integration` — Hermes + Evolver bridge for self-evolution
+
+## Reference Documents
+
+The skill stores reference documents in its `references/` directory:
+
+| File | Content |
+|------|---------|
+| `references/self-evolution-architecture-deep-analysis.md` | Full deep analysis of the three-layer system: prompt details, fork inheritance strategy, safety mechanisms, CMA comparison, and identified gaps |
+| `references/self-improvement-loop.md` | Design doc referenced by `agent/background_review.py` docstring — covers philosophy, implementation architecture, trigger conditions, and known future directions |
