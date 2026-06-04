@@ -47,21 +47,20 @@ print(f'   Has MIPROv2: {hasattr(dspy, \"MIPROv2\")}')
 # 3. Skill inventory
 echo ""
 echo "--- Skill Inventory ---"
-SKILL_COUNT=$(ls -1 /Users/can/.hermes/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+SKILL_COUNT=$(find /Users/can/.hermes/skills -maxdepth 4 -type f -name "SKILL.md" 2>/dev/null | wc -l | tr -d ' ')
 echo "✅ $SKILL_COUNT skills available"
 echo ""
 
 # 4. Run-evolution.sh dry-run test
 echo "--- Dry-Run Test ---"
-bash "$EVO_DIR/run-evolution.sh" --skill gif-search --iterations 1 --dry-run 2>&1 || {
-    echo "⚠️  Dry-run failed (gif-search may not exist)"
-    # Try with a common skill
-    FIRST_SKILL=$(ls -1 /Users/can/.hermes/skills/*/SKILL.md 2>/dev/null | head -1 | xargs -I{} basename "$(dirname {})")
-    if [[ -n "$FIRST_SKILL" ]]; then
-        echo "   Trying with skill: $FIRST_SKILL"
-        bash "$EVO_DIR/run-evolution.sh" --skill "$FIRST_SKILL" --iterations 1 --dry-run 2>&1
-    fi
-}
+FIRST_MD=$(find /Users/can/.hermes/skills -maxdepth 4 -type f -name "SKILL.md" 2>/dev/null | head -1)
+if [[ -n "$FIRST_MD" ]]; then
+    FIRST_SKILL=$(basename "$(dirname "$FIRST_MD")")
+    echo "   Trying with skill: $FIRST_SKILL"
+    bash "$EVO_DIR/run-evolution.sh" --skill "$FIRST_SKILL" --iterations 1 --dry-run 2>&1
+else
+    echo "⚠️  No skills found — SKILL.md files missing from skills/ directory"
+fi
 
 echo ""
 echo "=== Self-Check Complete ==="

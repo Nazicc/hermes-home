@@ -486,6 +486,7 @@ command_allowlist:
 - stop/restart hermes gateway (kills running agents)
 - delete in root path
 - git reset --hard (destroys uncommitted changes)
+- overwrite project env/config file
 - SQL TRUNCATE
 - find -exec rm
 quick_commands: {}
@@ -665,6 +666,12 @@ mcp_servers:
     - /Users/can/.hermes/mcp-servers/openviking-mcp/openviking_mcp.py
     command: /Users/can/.hermes/mcp-venv/bin/python
     enabled: true
+    env:
+      OPENVIKING_ENDPOINT: http://127.0.0.1:1933
+      OPENVIKING_API_KEY: ${OPENVIKING_API_KEY}
+      OPENVIKING_ACCOUNT: default
+      OPENVIKING_USER: default
+      OPENVIKING_AGENT: hermes
   simplemem:
     args:
     - /Users/can/.hermes/scripts/simplemem_mcp.py

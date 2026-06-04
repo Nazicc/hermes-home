@@ -80,13 +80,14 @@ def retain(
         timestamp: Optional ISO timestamp (auto-generated if omitted)
         tags: Optional list of tags for filtering (e.g., ['user', 'code', 'decision'])
     """
-    body: dict = {"content": content}
+    item: dict = {"content": content}
     if context:
-        body["context"] = context
+        item["context"] = context
+    if tags:
+        item["tags"] = tags
+    body: dict = {"items": [item]}
     if timestamp:
         body["occurred_at"] = timestamp
-    if tags:
-        body["tags"] = tags
 
     resp = _api("POST", f"/v1/default/banks/{bank_id}/memories", body)
     if resp.get("status") == "error":
