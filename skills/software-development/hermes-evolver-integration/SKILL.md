@@ -105,7 +105,48 @@ Manually editing `~/.hermes/config.yaml` to add custom provider configs, only to
 
 **Fix:** Add custom overrides to `~/.hermes/config.yaml.d/` (which is merged into the main config after SkillClaw runs), or re-apply changes via `restore_hermes_config.sh`. Never edit `config.yaml` directly if you use SkillClaw.
 
-### 🔴 GEPA Only Optimizes Predictor Instructions — Not Full Skill Bodies
+### 🟡 Bridge Pipeline Stalled — Reads Old Honcho Files Instead of evolution.db
+
+The `hermes_to_evolver_bridge.py` reads from `state.db` (Hermes' session DB) and writes to `~/.openclaw/agents/hermes-agent/sessions/`. It has been reading the same 200 sessions for months — the checkpoint passed all sessions long ago, so every 4-hour cycle produces identical output: active_ratio=0.45, signals=low_engagement+context_bloat+skill_drift. GEPA has no new data to learn from.
+
+Meanwhile, the evolution-recorder plugin writes real runtime data (735 tool calls, 207 sessions) to `evolution.db` — but nothing reads it for evolution.
+
+**Diagnosis**:
+```bash
+# Check if bridge is stalled
+wc -l ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/events.jsonl
+# If line count hasn't grown, bridge is stalled
+
+# Compare bridge output vs evolution.db data
+cd ~/.hermes && python3 -c "
+import sqlite3, pathlib
+db = pathlib.Path.home() / '.hermes' / 'simplemem_evolution' / 'evolution.db'
+conn = sqlite3.connect(str(db))
+tool_calls = conn.execute('SELECT COUNT(*) FROM evolution_entries WHERE entry_id LIKE \"tool_%\"').fetchone()[0]
+sessions = conn.execute('SELECT COUNT(*) FROM evolution_entries WHERE entry_id LIKE \"session_%\"').fetchone()[0]
+print(f'Tool calls: {tool_calls}, Session summaries: {sessions}')
+"
+```
+
+**Fix**: Rewrite `dataset_builder.BuildFromSessionDB()` in the GEPA pipeline to read from `evolution.db` instead of Honcho session files. Or write a new bridge (`evolution.db → Honcho sessions`) that transforms evolution.db entries into the format GEPA expects.
+
+### 🟡 evolution-recorder `_analyze_result` Type-Check Bug
+
+The `_analyze_result()` function uses `isinstance(result, dict)` but Hermes' terminal tool returns a `ToolResult` dataclass. This causes a silent fall-through to the "unspecified failure" path at line 207-208, flagging ~50% of successful terminal calls as failures (exit_code=0, output valid, but Success=False).
+
+**Impact**: Corrupted error rate metrics in evolution.db. The bridge reports 59% terminal "errors" but the real rate is ~5.5%.
+
+**Fix**: Add `hasattr` check before `isinstance` cascade in `evolution_recorder.py`:
+```python
+def _analyze_result(self, result, tool_name):
+    if hasattr(result, 'output'):  # ToolResult dataclass
+        result_d = {"output": result.output, "error": result.error, "exit_code": result.exit_code}
+    elif isinstance(result, dict):
+        result_d = result
+    else:
+        return True, None  # Unknown type — don't assume failure
+    # ... rest of analysis on result_d
+```
 
 The GEPA optimizer in `hermes-agent-self-evolution` only operates on `predictor.signature.instructions` — a 200–800 character string. The full skill body (which can be 40,000+ characters) is discarded during optimization:
 
@@ -169,23 +210,90 @@ The bridge's `--full-sync` flag syncs *all* sessions every time. Over time, with
 
 ## Runtime Data Capture Gap (June 2026 Deep-Dive)
 
-The existing architecture covers **Step 3** (Evolver → SimpleMem, missing). But the deeper gap is **data ingress** — there is no mechanism at all for real agent execution data to enter the evolution system.
+The existing architecture covers **Step 3** (Evolver → SimpleMem, missing). But a deeper gap is the **bridge-recorder disconnect** — the evolution-recorder plugin now captures runtime data to evolution.db, but the legacy bridge still reads from Honcho session files, creating a dual pipeline that never converges.
 
-### Three Disconnected Layers
+### The Dual-Pipeline Problem
+
+The system has TWO parallel data ingestion paths, but they operate independently and produce different data:
 
 ```
-Layer 1: Plugin System (15 hooks, hermes_cli/plugins.py)
-  post_tool_call fires at model_tools.py:996
-  on_session_end fires at conversation_loop.py:~L700+
-  Both fire — but ZERO plugins listen for evolution data
-         ↓
-Layer 2: SimpleMem Evolution (simplemem_evolution/evolution.db)
-  530 records, ALL synthetic — none from actual runtime
-  No mechanism to ingest tool execution or session data
-         ↓
-Layer 3: Evolution Pipeline (hermes-agent-self-evolution/)
-  dataset_builder.py:BuildFromSessionDB() = pass (STUB)
-  GEPA only sees synthetic data → limited improvement signal
+Path A: Legacy Bridge (still running every 4h via cron)
+  state.db ──→ hermes_to_evolver_bridge.py ──→ ~/.openclaw/.../sessions/*.jsonl
+  ↓
+  GEPA reads ├──→ events.jsonl (14 events, ALL identical)
+                ├──→ signals.json (same 3 signals every cycle)
+                └──→ rtk_metrics.jsonl
+  ⚠️ STALLED: Bridge checkpoint passed 200 sessions months ago
+     Now re-analyzes same 200 sessions every cycle
+     Every run = identical output (active_ratio=0.45, signals=low_engagement, context_bloat, skill_drift)
+
+Path B: Runtime Plugin (evolution-recorder, live now)
+  post_tool_call hook ──→ evolution.db (direct SQLite INSERT)
+  ↓
+  735 tool calls tracked (2026-06-04 snapshot)
+  207 session summaries
+  73% terminal calls, 13 unique tools detected
+  ✅ Real runtime data flowing — but NO pipeline reads it
+     dataset_builder.BuildFromSessionDB() = pass (STUB)
+```
+
+**Impact**: The legacy GEPA pipeline has no new data to learn from (stalled). The evolution.db has real runtime data but nothing consumes it for evolution signals. Two halves of the pipeline are both producing output, but neither feeds the other.
+
+### Real Data Profile (evolution.db, 2026-06-04)
+
+```
+Tool                 Calls   %Total
+terminal              537    73.1%
+mcp_simplemem_*        77    10.5%
+session_search         51     6.9%
+read_file              26     3.5%
+search_files           18     2.4%
+mcp_deerflow_*          9     1.2%
+execute_code            9     1.2%
+write_file              4     0.5%
+browser_*               3     0.4%
+other tools            21     2.9%
+                      ───── ──────
+    Total             735   100.0%
+```
+
+**Error rates (actual, not buggy detection)**:
+- terminal: 5.5% real errors (exit_code ≠ 0) — 41 bad exit codes
+- execute_code: 100% failure in cron mode (blocked)
+- browser_navigate: 83% failure
+- cron sessions: many all-error sessions from terminal failures
+- Remaining "errors" are false positives from `_analyze_result` bug
+
+### Evolution-Recorder Bug: `_analyze_result` Type-Check Failure
+
+The `evolution_recorder.py` `_analyze_result()` function (line 164+) checks `isinstance(result, dict)` but Hermes' terminal tool returns a `ToolResult` dataclass object, NOT a plain dict. This causes the function to fall through to the "unspecified failure" fallback at line 207-208, marking many successful terminal calls as "Success: False" (`"output": "...", "exit_code": 0`, `"error": null`).
+
+**Root cause (evolution_recorder.py:164-208)**:
+```python
+def _analyze_result(self, result, tool_name):
+    success = True
+    error = None
+    
+    if isinstance(result, dict):          # ← ToolResult is NOT dict
+        err = result.get("error") or result.get("error_message") or result.get("stderr")
+        ...
+    elif isinstance(result, str):         # ← ToolResult NOT str either
+        ...
+    # Falls through here
+    # Line 207-208: success = False, error = json.dumps(result)[:300]
+    if not success and error:
+        return False, error
+    return success, error
+```
+
+**Fix**: Add `hasattr(result, 'error')` check or `ToolResult` import guard before the `isinstance` cascade:
+```python
+    if hasattr(result, 'output'):  # ToolResult has .output, .error, .exit_code
+        result_d = {"output": result.output, "error": result.error, "exit_code": result.exit_code}
+        err = result_d.get("error") or result_d.get("error_message") or result_d.get("stderr")
+        ...
+    elif isinstance(result, dict):
+        ...
 ```
 
 ### The evolution-recorder Plugin (Implemented ✅)

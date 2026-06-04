@@ -11,7 +11,7 @@ fallback_providers:
 - api_key: sk-2f9c26650c6c49c8b452029fd21eb72f
   base_url: https://api.deepseek.com
   model: deepseek-v4-flash
-  provider: openai
+  provider: custom
 credential_pool_strategies: {}
 toolsets:
 - hermes-cli
@@ -180,71 +180,71 @@ auxiliary:
     extra_body: {}
     download_timeout: 30
   web_extract:
-    provider: auto
-    model: ''
+    provider: custom
+    model: deepseek-v4-flash
     base_url: ''
     api_key: ''
     timeout: 360
     extra_body: {}
   compression:
-    provider: auto
-    model: ''
+    provider: custom
+    model: deepseek-v4-flash
     base_url: ''
     api_key: ''
     timeout: 120
     extra_body: {}
   skills_hub:
-    provider: auto
-    model: ''
+    provider: custom
+    model: deepseek-v4-flash
     base_url: ''
     api_key: ''
     timeout: 30
     extra_body: {}
   approval:
-    provider: auto
-    model: ''
+    provider: custom
+    model: deepseek-v4-flash
     base_url: ''
     api_key: ''
     timeout: 30
     extra_body: {}
   mcp:
-    provider: auto
-    model: ''
+    provider: custom
+    model: deepseek-v4-flash
     base_url: ''
     api_key: ''
     timeout: 30
     extra_body: {}
   title_generation:
-    provider: auto
-    model: ''
+    provider: custom
+    model: deepseek-v4-flash
     base_url: ''
     api_key: ''
     timeout: 30
     extra_body: {}
   triage_specifier:
-    provider: auto
-    model: ''
+    provider: custom
+    model: deepseek-v4-flash
     base_url: ''
     api_key: ''
     timeout: 120
     extra_body: {}
   kanban_decomposer:
-    provider: auto
-    model: ''
+    provider: custom
+    model: deepseek-v4-flash
     base_url: ''
     api_key: ''
     timeout: 180
     extra_body: {}
   profile_describer:
-    provider: auto
-    model: ''
+    provider: custom
+    model: deepseek-v4-flash
     base_url: ''
     api_key: ''
     timeout: 60
     extra_body: {}
   curator:
-    provider: auto
-    model: ''
+    provider: custom
+    model: deepseek-v4-flash
     base_url: ''
     api_key: ''
     timeout: 600
@@ -252,16 +252,16 @@ auxiliary:
   flush_memories:
     api_key: ''
     base_url: ''
-    model: ''
-    provider: auto
+    model: deepseek-v4-flash
+    provider: custom
     timeout: 30
   session_search:
     api_key: ''
     base_url: ''
     extra_body: {}
     max_concurrency: 3
-    model: ''
-    provider: auto
+    model: deepseek-v4-flash
+    provider: custom
     timeout: 30
 display:
   compact: false
