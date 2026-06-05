@@ -110,6 +110,15 @@ bash -n script.sh
 
 Refine based on test results. Once root cause is confirmed, fix it and verify.
 
+### 回归测试失败分类法（Regression Failure Triage）
+当遇到测试套件批量失败（如 49 跑 27 挂），**不要逐个修**。用四步归类法：
+
+1. **运行全量** — 先跑 `pytest -v test_file.py --tb=short` 获取完整失败清单
+2. **读真实接口** — 测试假数据与真实模块接口脱节时，先读模块源码确认正确字段和签名
+3. **按根因分组** — 把失败用例归入 3-5 个根因类别（如：A=非法字段、B=缺必需参数、C=模式不匹配、D=上下文判断）。用 count 量化影响："17 cases via A, 7 via B, 3 via C, 1 via D"
+4. **每组一个 patch 辐射多个用例** — 修复工厂函数或最上游调用，而非逐一修每个用例
+5. **受限工具生效** — 当 `execute_code` 被 blocked（如 cron 安全模式），使用 `patch` 工具做批量替换
+
 **Fixing rules:**
 - Fix the root cause, not the symptom
 - Write a regression test to prevent recurrence
@@ -241,6 +250,13 @@ write_file("/path/to/file", "new content")
 ## Anti-Patterns
 
 1. **Fix-before-understanding** — Applying a fix before finishing Phase 1 and Phase 2. Creates new bugs from the same root cause. Always observe and hypothesize first.
+
+2. **Dismissing system verifier warnings without evidence** — When a safety guardrail or verifier (e.g., Hermes file-mutation verifier, permission warnings, validation errors) fires, never say "it's harmless" or "don't worry about it" without proving that claim. The user will rightfully demand evidence. Always:
+   - Read the verifier's source code to understand what condition triggered it
+   - Check the file system for the referenced paths (confirm existence or non-existence)
+   - Verify through an independent mechanism that the intended operation actually succeeded
+   - Present concrete evidence (file listings, source code excerpts, test results) not just a claim
+   - If a previous turn produced a stale warning, acknowledge it directly and explain why it no longer applies — don't silently ignore
 2. **set-e-and-dollar-question** — Using `[ $? -eq 0 ]` after `set -e`. `$?` captures the exit code of `[`, not the previous command. Use a sentinel variable instead: `result=$?; [ $result -eq 0 ] || exit 1`.
 3. **Multi-variable jump** — Changing two things at once and testing both. The fix that worked is unknown. Change one variable, test, then the next.
 4. **Silent-failure assumption** — Assuming no error message means no error. Under `set -e`, a command failure kills the script silently.
@@ -248,6 +264,69 @@ write_file("/path/to/file", "new content")
 6. **API-stability assumption** — Assuming third-party APIs return the same shape. They change. Check the actual contract in logs or test calls.
 7. **Stale-state blindspot** — Assuming cached or environment data is fresh. Scripts read from previous runs, config files are stale, environment variables are wrong. Verify.
 8. **macOS-cp-alias trap** — Using bare `cp source dest` on macOS. It's aliased to `cp -i` and hangs on confirmation. Always use `/bin/cp -f`.
+
+9. **dict-type-alias-attribute-access** — When a type is declared as `VerifyFinding = dict[str, Any]`, Pyright correctly reports `"code" is unknown on "dict[str, Any]"` when you write `f.code`. This is **not a false positive** — Python dicts don't support attribute access at the type level. Always use subscript access `f["code"]` for dict aliases. See `references/python-dict-type-aliases.md` for diagnosis and bulk-fix workflow.
+
+10. **macOS-symlink-redirection trap** — `cat > symlink` (and any `> symlink` redirection) follows the symlink chain and writes to the **target file**, not replacing the symlink itself. This corrupts real binaries if the symlink chain ends at a system file (e.g., a uv-managed Python binary). **Dangerous pattern:**
+
+11. **Stale-.pyc-bytecode blindspot** — Python's `__pycache__/` caches compiled bytecode and masks syntax errors,
+    missing imports, and undefined functions introduced by file edits. A test suite that passed 90/90 one minute
+    can fail with `0 collected` and `SyntaxError` / `NameError` / `ImportError` the next — **only after the cache
+    is invalidated**. The stale cache makes the bugs invisible.
+
+    **How to detect:**
+    - pytest shows `0 collected` with import/syntax errors you didn't see before
+    - You made multiple edits to a module and the first test run passed, but a later run fails on something
+      that should have been caught earlier
+    - Python reports a NameError for a function you *know* is in the file — because the cache holds an older
+      version of the module (fewer functions)
+
+    **Root cause:**
+    - write_file / patch updates the `.py` source file but the corresponding `.pyc` in `__pycache__/` is not
+      automatically invalidated in all cases (macOS HFS+ timestamp quirks, cross-directory imports, nested
+      package structure)
+    - `rm -rf __pycache__` forces recompilation and reveals the real errors
+
+    **Fix:**
+    ```bash
+    # Clear ALL __pycache__ dirs in the project (source + tests)
+    find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null
+
+    # Then re-run
+    python -m pytest test_file.py -v
+    ```
+
+    **Prevention:** After every 3+ edits to a source module, or any time you get a suspicious "0 collected",
+    clear `__pycache__` before running tests. This prevents a latent-bug cascade where each fix reveals the
+    next underlying error.
+
+    **Example from production (anfu-skill sources.py):** Four latent bugs were hidden by stale `.pyc`:
+    - Missing `_mock_cnvd_items` function (NameError on import)
+    - Escaped triple-quotes in docstring (SyntaxError)
+    - Over-escaped backslashes in regex (SyntaxError)
+    - Missing `_real_cnvd_items` function (NameError at module init)
+    All four surfaced in sequence after one `find . -name __pycache__ -exec rm -rf {} +`.
+    See `references/stale-pyc-bytecode-example.md` for the full reproduction trace.
+   ```bash
+   ln -sf ~/.venvs/scrapling/bin/python ~/.local/bin/scrapling-py  # creates symlink
+   cat > ~/.local/bin/scrapling-py << 'EOF'  # WRONG! writes through the chain!
+   ```
+   Instead: always `rm -f symlink` first, then create/rename a regular file.
+   ```bash
+   rm -f ~/.local/bin/scrapling-py
+   cat > /tmp/wrapper.sh << 'EOF'      # write to temp file first
+   ...
+   EOF
+   /bin/cp -f /tmp/wrapper.sh ~/.local/bin/scrapling-py  # regular cp to new path
+   chmod +x ~/.local/bin/scrapling-py
+   ```
+   **Fix when this happens:** If you overwrite a uv-managed Python binary (`~/.local/share/uv/python/<version>/bin/python3.x`):
+   ```bash
+   rm -rf ~/.local/share/uv/python/cpython-<version>-macos-aarch64-none
+   uv python install <version>
+   ```
+   Then recreate the venv (`uv venv`) and reinstall packages. The same rule applies to write_file tools that may follow symlinks — always verify with `file path` before writing.
+   **Related:** Hermes write_file may also follow symlink chains. After writing, verify with `file path && wc -c path` in terminal.
 
 ## When NOT to Use
 
@@ -266,3 +345,4 @@ write_file("/path/to/file", "new content")
 - **context-engineering** (skills/context-engineering/SKILL.md) — When debugging reveals context pollution, reset and re-observe.
 - **hermes-agent-diagnostics** (skills/hermes-agent-diagnostics/SKILL.md) — For Hermes system-level issues, start here first.
 - **deerflow-commander** (skills/deerflow-commander/SKILL.md) — Delegate deep research on unfamiliar technologies during debugging.
+- **Dict type aliases** (`references/python-dict-type-aliases.md`) — Python `dict[str, Any]` alias gotcha: attribute access vs subscript access, diagnosis, and bulk-fix workflow for test code.

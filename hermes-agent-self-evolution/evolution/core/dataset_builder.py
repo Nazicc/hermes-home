@@ -110,10 +110,94 @@ class SyntheticDatasetBuilder:
 
     def __init__(self, config: EvolutionConfig):
         self.config = config
-        self.generator = dspy.ChainOfThought(
+        self.generator = dspy.Predict(
             self.GenerateTestCases,
-            backtrack_threshold=1e308,  # large enough to effectively never retry on parsing failures
         )
+
+    @staticmethod
+    def _parse_markdown_list(text: str) -> list | None:
+        """Parse markdown numbered list format (fallback when LLM doesn't output JSON).
+
+        Handles format like:
+        1. **Title**
+           Input: `"query"`
+           Expected: description
+
+        Or Chinese/ alternative formats:
+        1. **Title**
+           - 输入：用户消息"query"
+           - 预期行为：description
+
+        Or any variation with numbered items and input/expected-like patterns.
+        """
+        import re
+        lines = text.strip().split('\n')
+        cases = []
+        current = {}
+
+        for line in lines:
+            # Match numbered items: "1. **Title**" or "1. Title"
+            m = re.match(r'^\d+\.\s+\*{0,2}(.+?)\*{0,2}\s*$', line)
+            if m and current:
+                if current.get('task_input') and current.get('expected_behavior'):
+                    cases.append(current)
+                    current = {}
+                continue
+
+            # Match various input formats:
+            # Input: `"... "`
+            # 输入：用户消息"..."
+            # 输入："..."
+            m = re.match(r'\s*(?:Input|输入)(?::|：)\s*(?:用户消息)?[`"“‘]*(.+?)[`"”’]', line)
+            if m:
+                val = m.group(1).strip()
+                if val:
+                    current['task_input'] = val
+                continue
+
+            # Match various expected behavior formats:
+            # Expected: description
+            # 预期行为：description
+            m = re.match(r'\s*(?:Expected|预期行为)(?::|：)\s*(.+)', line)
+            if m:
+                val = m.group(1).strip()
+                if val:
+                    current['expected_behavior'] = val
+                continue
+
+            # Fallback for "- input/expected" pattern where both are inline
+            m = re.match(r'\s*[-*]\s+(?:Input|输入)(?::|：)\s*(?:用户消息)?[`"“‘]*(.+?)[`"”’]', line)
+            if m:
+                val = m.group(1).strip()
+                if val:
+                    current['task_input'] = val
+                continue
+
+            m = re.match(r'\s*[-*]\s+(?:Expected|预期行为)(?::|：)\s*(.+)', line)
+            if m:
+                val = m.group(1).strip()
+                if val:
+                    current['expected_behavior'] = val
+                continue
+
+        # Don't forget the last one
+        if current and current.get('task_input') and current.get('expected_behavior'):
+            cases.append(current)
+
+        # Fill in defaults
+        if not cases:
+            return None
+
+        result = []
+        for c in cases:
+            result.append({
+                'task_input': c['task_input'],
+                'expected_behavior': c['expected_behavior'],
+                'difficulty': 'medium',
+                'category': 'general',
+            })
+
+        return result
 
     def generate(
         self,
@@ -136,44 +220,61 @@ class SyntheticDatasetBuilder:
 
         # Parse the generated test cases
         cases_raw = None
+        raw = result.test_cases
+
+        import re
+
+        # Strategy 0: strip markdown code fences first
+        text = raw.strip()
+        text = re.sub(r'^```(?:json)?\s*\n?', '', text)
+        text = re.sub(r'\n?\s*```$', '', text)
+        text = text.strip()
+
+        # Try direct parse first
         try:
-            cases_raw = json.loads(result.test_cases)
+            cases_raw = json.loads(text)
         except json.JSONDecodeError:
-            # Strategy 1: find the outermost brackets
-            import re
-            match = re.search(r'\[.*\]', result.test_cases, re.DOTALL)
+            pass
+
+        # Strategy 1: find the outermost brackets
+        if cases_raw is None:
+            match = re.search(r'\[.*\]', text, re.DOTALL)
             if match:
                 try:
                     cases_raw = json.loads(match.group())
                 except json.JSONDecodeError:
                     cases_raw = None
 
-# Strategy 2: fix common LLM JSON quirks (single-quoted keys, trailing commas)
-            if cases_raw is None:
-                fixed = result.test_cases
-                # Remove markdown code fences
-                fixed = re.sub(r'^```(?:json)?\s*', '', fixed, flags=re.MULTILINE)
-                fixed = re.sub(r'\s*```$', '', fixed, flags=re.MULTILINE)
+        # Strategy 2: fix common LLM JSON quirks (single-quoted keys, trailing commas)
+        if cases_raw is None:
+            fixed = text
+            # Fix Python-style single quotes → JSON double quotes
+            # 1. Fix keys: 'key': -> "key":
+            fixed = re.sub(r"'([a-zA-Z_][a-zA-Z0-9_]*)'\s*:", lambda m: '"' + m.group(1) + '":', fixed)
+            # 2. Fix values: : 'value' -> : "value" (with internal quote escaping)
+            def _fix_value(m):
+                val = m.group(1)
+                val = val.replace('\\', '\\\\')
+                val = val.replace('"', '\\"')
+                return ': "' + val + '"'
+            fixed = re.sub(r":\s*'([^']*)'", _fix_value, fixed)
+            # 3. Remove trailing commas before ] or }
+            fixed = re.sub(r',(\s*[}\]])', r'\1', fixed)
+            try:
+                cases_raw = json.loads(fixed)
+            except json.JSONDecodeError:
+                cases_raw = None
 
-                # Fix Python-style single quotes → JSON double quotes
-                # 1. Fix keys: 'key': -> "key":
-                fixed = re.sub(r"'([a-zA-Z_][a-zA-Z0-9_]*)'\s*:", lambda m: '"' + m.group(1) + '":', fixed)
-                # 2. Fix values: : 'value' -> : "value" (with internal quote escaping)
-                def _fix_value(m):
-                    val = m.group(1)
-                    val = val.replace('\\', '\\\\')
-                    val = val.replace('"', '\\"')
-                    return ': "' + val + '"'
-                fixed = re.sub(r":\s*'([^']*)'", _fix_value, fixed)
-                # 3. Remove trailing commas before ] or }
-                fixed = re.sub(r',(\s*[}\]])', r'\1', fixed)
-                try:
-                    cases_raw = json.loads(fixed)
-                except json.JSONDecodeError:
-                    cases_raw = None
+        # Strategy 3: parse markdown numbered list format
+        if cases_raw is None:
+            cases_raw = self._parse_markdown_list(text)
 
-            if cases_raw is None:
-                raise ValueError(f"Could not parse test cases from LLM output: {result.test_cases[:200]}")
+        if cases_raw is None:
+            raise ValueError(
+                f"Could not parse test cases from LLM output.\n"
+                f"Raw[:200]: {raw[:200]}\n"
+                f"After strip+code-fence-removal[:200]: {text[:200]}"
+            )
 
         examples = [
             EvalExample(

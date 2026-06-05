@@ -742,6 +742,30 @@ def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
             )
             return True, silent_doc, SILENT_MARKER, None
 
+    # no_agent mode: run the script (if any) for its side effects, but
+    # never spawn an AIAgent.  Returns SILENT so delivery is suppressed.
+    if job.get("no_agent"):
+        if prerun_script is not None:
+            _ran_ok, _script_output = prerun_script
+            if _ran_ok:
+                silent_doc = (
+                    f"# Cron Job: {job_name}\n\n"
+                    f"**Job ID:** {job_id}\n"
+                    f"**Run Time:** {_hermes_now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                    f"`no_agent=true` — script executed, agent skipped.\n"
+                    f"### Script Output\n{_script_output}\n"
+                )
+                return True, silent_doc, SILENT_MARKER, None
+            else:
+                return False, _script_output, "", _script_output
+        silent_doc = (
+            f"# Cron Job: {job_name}\n\n"
+            f"**Job ID:** {job_id}\n"
+            f"**Run Time:** {_hermes_now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            "`no_agent=true` — no script to run, agent skipped.\n"
+        )
+        return True, silent_doc, SILENT_MARKER, None
+
     prompt = _build_job_prompt(job, prerun_script=prerun_script)
     origin = _resolve_origin(job)
     _cron_session_id = f"cron_{job_id}_{_hermes_now().strftime('%Y%m%d_%H%M%S')}"

@@ -2,12 +2,9 @@
 name: skills-evolution-from-research
 description: "Evaluate and integrate external open-source projects into Hermes Agent skills. Use when analyzing GitHub repos for potential skill improvements, or when upgrading skill standards based on external research, or when auditing existing local skills for stub quality, outdated information, or missing trigger/anti_trigger fields. NOT for: trivial one-off tasks, skills that are already well-developed and tested, when you lack environment context to validate the integration, or when the external project has no relevant overlap with existing Hermes capabilities."
 category: general
-version: 2.1.0
-...
+version: 2.2.0
 author: Hermes Agent
-...
 license: MIT
-...
 ---
 
 ## Skill Evolution Protocol
@@ -174,6 +171,75 @@ If `venv` is missing or DSPy import fails → skip to Phase 3 (manual evolution)
 - **Import content** (external is much better): Copy the core guidance sections, adapt API endpoints/ports to match this environment, preserve the structure but own the content
 - **Merge** (both have value): Keep Hermes-specific paths and tool names, add external's methodological framework, combine trigger lists
 - **Ignore** (not applicable): Document why in the comparison table, skip to next candidate
+
+---
+
+## Phase 2.5: Integrate CLI Tools That Self-Generate Hermes Skills
+
+*(2026-06-05: Added from gstack integration — pattern for tools with `--host hermes` or `setup` that auto-generate Hermes skills to repo-relative paths)*
+
+Some external tools (e.g. gstack/garrytan-gstack, some MCP generators) ship with a `setup` or `--host hermes` flag that auto-generates Hermes skill files. These always land in **relative paths** inside the tool's own repo dir — never directly in `~/.hermes/skills/`. The correct integration pattern is:
+
+### Pattern: Shallow Clone → Setup → Symlink → Verify
+
+```bash
+# 1. Shallow clone (fast, no history)
+git clone --single-branch --depth 1 https://github.com/owner/repo.git ~/target-dir
+
+# 2. Verify dependencies before running setup
+# Typical dependencies: Bun, Node ≥20, Git, CLI agent (Claude Code / Codex / OpenCode)
+which bun node git claude  # or relevant CLI
+
+# 3. Run setup (may timeout on large downloads like Chrome Headless Shell)
+# The core installation usually completes BEFORE the timeout
+cd ~/target-dir && ./setup  # timeout ~120s is common
+
+# 4. Skills are generated to ~/target-dir/.hermes/skills/, NOT to ~/.hermes/skills/
+ls ~/target-dir/.hermes/skills/  # verify generated skills
+
+# 5. Symlink each generated skill dir into global ~/.hermes/skills/
+for d in ~/target-dir/.hermes/skills/*/; do
+  ln -sf "$d" ~/.hermes/skills/
+done
+
+# 6. Verify loading works
+skill_view(skill-name)  # e.g. skill_view(gstack-qa) → ~50-80KB of content
+```
+
+### Key Insights
+
+- **`--host hermes` generates artifacts to the repo's own `.hermes/skills/`**, not to the user's global `~/.hermes/skills/`. This means symlinks (or copy+refresh) are always needed — the tool's install script cannot write outside its own tree.
+- **Setup scripts may appear to fail** via timeout (e.g. downloading Chrome Headless Shell over ~2 min) but the skill generation step usually completes first. Check `ls <repo>/.hermes/skills/` before concluding the install failed.
+- **Symlinks are better than copies** for two reasons: (a) re-running `setup` after a tool update automatically refreshes the skills, and (b) you can see `~/gstack` as the source of truth.
+- **Verify individual skills** with `skill_view()` — some generated skills are 50-80KB (full workflow instructions), test that the largest ones load correctly.
+- **Check the tool's own config binary** (e.g. `gstack-config get proactive`) to confirm the core tool is operational.
+- **Long-lived servers** (e.g. gstack browse binary) start as persistent processes — they are NOT MCP servers. They don't need `hermes mcp add`, they run independently and the Hermes skills orchestrate them.
+
+### When to Use This Pattern vs. Manual Evolution
+
+| Situation | Approach |
+|-----------|----------|
+| Tool has a `--host hermes` or `setup` flag | Use Pattern 2.5 (symlink) |
+| Tool has no Hermes support but great content | Use Phase 3 (manual evolution) |
+| Tool is a single MCP server | Use `hermes mcp add` instead |
+| Tool generates 50+ skills | Use Pattern 2.5; manual evolution of each is impractical |
+
+### Real-World Example: gstack (garrytan/gstack)
+
+- 53 generated skills across QA, code review, deployment, design, planning, security, etc.
+- Each skill is a full workflow (not a stub) — 50-80KB for the largest ones (gstack-qa, gstack)
+- Requires: Bun 1.3.x, Node v26, Claude Code CLI, Playwright Chromium, Git
+- `./setup --host hermes` generates to `~/gstack/.hermes/skills/`
+- `browse` binary is a standalone Playwright browser server, not an MCP endpoint
+- Skills use `skill_view()` pattern, invoked via `/skill-name` or by the agent loading the relevant gstack-* skill
+
+### Pitfalls
+
+- **Do NOT** symlink individual files — symlink entire directories (each skill is a dir with SKILL.md)
+- **Do NOT** add the generated skill dirs to `~/.hermes/config.yaml` as MCP servers — they are native Hermes skills, not MCP
+- **Setup may hang** on Chrome download behind a proxy or slow connection. Kill with Ctrl-C after 120s and check what actually generated
+- **Generated skill names** often use a prefix (e.g. `gstack-qa`) — search `~/.hermes/skills/gstack-*` to discover them
+- **Do NOT copy** the generated skill files — symlinks let the tool's own git repo serve as source of truth
 
 ---
 
@@ -349,6 +415,7 @@ Re-evaluate a skill when:
 | Patch fails silently | No error but file unchanged | Read exact current string before patching |
 | hermes-agent git repo ≠ skills git repo | Changes not appearing in hermes-agent push | Check which git repo tracks the changed file |
 | GEPA venv/dspy missing | ModuleNotFoundError | Perform manual evolution instead |
+| Generated skills land in repo-relative path | Skills not showing in `skill_view()` | Symlink from `~/.hermes/skills/` to `<repo>/.hermes/skills/*/` |
 
 ### Handling Embedded Git Repos
 
@@ -395,6 +462,8 @@ See: `~/.hermes/scripts/simplemem_mcp.py` for the AMP-typed memory implementatio
 | "I'll patch all 164 skills at once" | Skills are in an embedded git repo; commit to the skills repo separately from the hermes-agent repo |
 | "This skill is fine as-is" | If a skill has <20 lines, it's a stub — no amount of external research helps until the stub is rewritten |
 | "External is much better, I'll copy everything" | Copy the core guidance but adapt API endpoints/ports to match this environment |
+| "If setup times out, the install failed" | The skill generation step usually completes before the timeout; check `<repo>/.hermes/skills/` first |
+| "I can copy generated skills into ~/.hermes/skills/" | Symlinks preserve the source-of-truth repo and auto-update on re-run |
 
 ---
 

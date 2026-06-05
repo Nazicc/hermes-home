@@ -2,10 +2,8 @@
 name: native-mcp
 description: "Use when registering a new MCP server with hermes, adding or configuring MCP servers via CLI or config, debugging MCP tool discovery, connecting a custom FastMCP server, setting up MCP auto-start, resolving MCP connection failures, understanding hermes-agent MCP architecture, or connecting stdio-mode MCP servers. NOT for: browsing GitHub issues or comments, code review workflows, CI/CD automation, LLM API configuration, non-MCP tool integrations, or general network setup."
 category: general
-version: 1.0.0
-...
+version: 1.0.1
 author: Hermes Agent
-...
 ---
 
 # Native MCP — Built-in MCP Client
@@ -34,7 +32,16 @@ hermes mcp test <name>   # Test a server connection
 hermes mcp remove <name>  # Remove a server
 
 
-**Examples:**
+**⚠️ `hermes mcp add` 可能失败** — 该命令在此系统中可能返回 exit 143（超时）或 exit 2（配置写入错误）。如果持续失败：
+
+1. 手动编辑 `~/.hermes/config.yaml`，在 `mcp_servers` 下添加条目（参考已有条目格式）
+2. 将服务器名加入 `enabled` 工具集下的 `mcp` 列表
+3. 重启 gateway
+4. 用 `hermes mcp list` 验证
+
+手动编辑配置等价于 CLI 命令，gateway 重启后生效。
+
+### Examples
 
 bash
 # sirchmunk MCP server
@@ -47,6 +54,13 @@ hermes mcp add sirchmunk \
 hermes mcp add myserver \
   --command /path/to/venv/bin/python \
   --args /path/to/mcp_server.py
+
+# Node.js npm package (global install, no npx delay):
+npm install -g <package-name>
+hermes mcp add <name> \
+  --command node \
+  --args /path/to/npm-global/lib/node_modules/<package>/entry-point.js
+# Pipe empty stdin to auto-accept "Enable all tools? [Y/n/select]"
 
 
 ### Via config.yaml
@@ -116,6 +130,23 @@ if __name__ == "__main__":
     mcp.run()
 
 
+### FastMCP Tool Decorator Gotchas (Critical)
+
+**`@mcp.tool()` ignores unknown kwargs silently.** FastMCP's `@mcp.tool()` decorator does NOT raise an error for unknown keyword arguments like `tags` — it silently ignores them. This means `@mcp.tool(tags=["read"])` will register the tool fine but WITHOUT the tags. Always validate with `fastmcp list` or check the tool signature:
+
+bash
+# Validate which kwargs are accepted
+python -c "from mcp.server.fastmcp import FastMCP; import inspect; sig = inspect.signature(FastMCP._decorate_tool); print(sig)"
+
+
+**`from __future__ import annotations` crashes tool registration.** If your MCP server file has `from __future__ import annotations` at the top, FastMCP's `issubclass(param.annotation, Context)` call raises `TypeError` because annotations become lazy strings instead of actual type objects. **Remove that import from any file that uses `@mcp.tool()`.**
+
+Safe alternatives for forward-reference types without `from __future__ import annotations`:
+- Use `if TYPE_CHECKING:` blocks for import-time-only type checking
+- Define the Context type import at the module level
+- Use string annotations only where FastMCP won't introspect them
+
+
 ## Stdio MCP Gotchas (Critical)
 
 **`asyncio.TaskGroup` cannot be pickled across process boundaries.** If your MCP server uses `asyncio.TaskGroup` for concurrent operations and hermes-agent fails with `TypeError: cannot pickle 'locked' object`, switch to `subprocess.Popen` with explicit stdin/stdout communication instead of asyncio internals.
@@ -156,6 +187,32 @@ launchctl load ~/Library/LaunchAgents/com.hermes.<name>.plist
 | Wrong Python venv | Ensure the `command` uses the correct venv's Python |
 | ModuleNotFoundError | The MCP server's venv must have all required packages |
 | Port conflicts | HTTP transport servers must use unique ports |
+| macOS `grep -P` fails | macOS grep lacks `-P`. Use `grep -E` or `awk`. |
+
+### Direct JSON-RPC Tool Testing
+
+When `hermes mcp test` discovers tools but you need to verify execution:
+
+bash
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"<tool>","arguments":{}}}' | \
+  timeout 15 /path/to/server 2>/dev/null | grep '^{'
+
+
+### Batch Regression Testing
+
+After adding or modifying any MCP server, verify all servers:
+
+bash
+for srv in srv1 srv2 srv3; do
+  hermes mcp test "$srv" | grep -q "tools:" && echo "✅ $srv" || echo "❌ $srv"
+done
+
+
+### Node.js npm MCP Server Pattern
+
+Install globally, then use `node /path/to/dist/index.js` as the command.
+See `references/mcp-server-integration-patterns.md` for detailed examples
+covering Node.js, Python pip, local scripts, and batch regression testing.
 
 **Debugging steps:**
 1. Check registered servers: `hermes mcp list`
@@ -168,3 +225,4 @@ launchctl load ~/Library/LaunchAgents/com.hermes.<name>.plist
 
 - `mcp-debugging` — Systematic debugging when MCP tools fail
 - `simplemem-integration` — Example of wrapping a Python library as an MCP server
+- `mcporter` — CLI reference for `hermes mcp subcommands`
