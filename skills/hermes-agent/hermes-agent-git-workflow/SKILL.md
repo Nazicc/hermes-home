@@ -192,11 +192,63 @@ git log origin/main..HEAD  # review unpushed commits
 
 Avoid `git push --force` on main branches. Use `git push --force-with-lease` as a safer alternative.
 
-### Push Timeout Troubleshooting (Large `.git`, Small Delta)
+### Push Timeout Troubleshooting
 
-When `~/.hermes/` has accumulated years of history (multi-GiB `.git/` directory) but only a small delta to push (few dozen MB), standard `git push` may time out at the default 120–180s limit. The issue is not the pack size but the remote's delta computation and object enumeration over a large ref namespace.
+Push failures have **two distinct root causes** that require different diagnostic and fix strategies. Always determine which one you're dealing with.
 
-**Diagnose the real push size:**
+#### Step 1: Diagnose Network Quality
+
+Network quality issues are the most common cause of push timeouts and are easy to miss. Always check this first:
+
+```bash
+# Detect packet loss — this is the top cause of push timeout
+ping -c 10 github.com
+# 0% loss = network fine; >5% loss = likely the root cause
+# Packet loss as low as 5-10% can cause HTTP/2 stream multiplexing failures
+```
+
+**If packet loss is detected (>0%):**
+
+HTTP/2 (git's default) multiplexes multiple streams over a single TCP connection. Under packet loss, a single lost packet can stall the entire multiplex, causing silent disconnects with `HTTP 408` or `curl 28` after 60-180s. SSH also suffers because TCP retransmission waits are the same.
+
+**Mitigations (try in order):**
+
+```bash
+# 1. Switch to HTTP/1.1 — avoids HTTP/2 multiplexing fragility under loss
+#    This was the fix that worked for a real 33% packet loss case
+cd ~/.hermes
+/usr/bin/git -c http.version=HTTP/1.1 push gh-https main
+
+# 2. Increase buffers and tolerance for low-speed networks
+git -c http.postBuffer=524288000 -c http.lowSpeedLimit=100 -c http.lowSpeedTime=600 push origin main
+
+# 3. Background push with notify — lets the push run as long as needed
+#    Use the terminal tool with background=true + notify_on_complete=true
+#    A push that fails at 60s with HTTP/2 may complete in 15+ min with HTTP/1.1
+```
+
+**If push still fails or packet loss is too high (>20%):**
+
+```bash
+# Create a git bundle — portable transport that can be moved via USB,
+# a different network, or gh release upload, then pulled on the other end
+
+# Step 1: Create bundle with the unpushed commits
+git bundle create /tmp/hermes-push.bundle main --not origin/main
+
+# Step 2a: On the target machine, fetch from bundle
+git fetch /tmp/hermes-push.bundle main
+
+# Step 2b: Or upload bundle as a GitHub Release asset, then fetch on any machine
+gh release create push-bundle /tmp/hermes-push.bundle --title "Push bundle" --notes "Transfer via another network"
+
+# Step 3: Push the fetched refs to the remote
+git push origin main
+```
+
+Bundle size example: 3 commits, ~28.5 MB for a `.git/` directory that is 2.6+ GiB (only actual new objects are included).
+
+#### Step 2: If Network Is Clean, Diagnose Push Size
 
 ```bash
 # Apparent .git size (inflated, includes loose objects + packs)
@@ -212,17 +264,26 @@ git rev-list --objects main --not origin/main | git cat-file --batch-check='%(ob
 git rev-list --count main --not origin/main
 ```
 
-**When push times out repeatedly (HTTPS *and* SSH both fail):**
+**When push times out on a clean network (HTTPS *and* SSH both fail):**
+
+The bottleneck is typically on GitHub's side — delta computation against deep ref history from a repo with many years of commits. Protocol choice (HTTPS vs SSH) doesn't change the server-side workload. The solution is patience (longer timeout) or thinning history (`git gc --aggressive`, or pruning old refs if safe).
 
 ```bash
-# Background push with generous timeout (up to 600s via terminal tool)
-# Use notify_on_complete=true so you're alerted when it finishes
+# Background push with generous timeout
 cd ~/.hermes
 git push origin main
+# Use terminal tool background=true + notify_on_complete=true
 ```
-If the terminal tool's limit is still hit, split into smaller batches or push during low-network-usage hours.
 
-**Why both HTTPS and SSH can time out:** The bottleneck is typically on GitHub's side — delta computation against a deep ref history from a repo with many years of commits. Protocol choice (HTTPS vs SSH) doesn't change the server-side workload. The solution is patience (longer timeout) or thinning history (`git gc --aggressive`, or pruning old refs if safe).
+If the terminal tool's limit is still hit, split into smaller batches.
+
+#### Common Pitfalls
+
+- **RTK/shell wrapper interference**: If `bash: :GO111MODULE=on: command not found` or similar errors appear during push, a RTK (Runtime Kit) or Go env wrapper is corrupting the command. Use `/usr/bin/git` (absolute path) to bypass it entirely.
+- **Large `.git` size ≠ large push**: A 2.6+ GiB `.git/` directory may push only 28 MB of new objects. Don't be fooled by the directory size — check `git count-objects -vH`.
+- **Both HTTPS and SSH fail** → first check packet loss, not history depth. The `ping` test is the cheapest and most revealing diagnostic.
+- **HTTP 408 curl 22** is the canonical error code for a lost HTTP/2 stream under packet loss.
+- **Never use `git push --force` on shared branches** even if push times out — use `--force-with-lease`.
 
 ## Pre-Commit Dirty Tree Audit
 
