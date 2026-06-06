@@ -29,10 +29,14 @@ class EvolutionConfig:
     max_prompt_growth: float = 0.2  # 20% max growth over baseline
 
     # Eval dataset
-    eval_dataset_size: int = 20  # Total examples to generate
+    eval_dataset_size: int = 60  # Total examples to generate (was 20)
     train_ratio: float = 0.5
     val_ratio: float = 0.25
     holdout_ratio: float = 0.25
+
+    # Fidelity metric (content-preservation guard)
+    fidelity_weight: float = 0.15  # Weight in composite score (0-1)
+    min_content_fidelity: float = 0.3  # Minimum Jaccard/ed-dist threshold for deploy
 
     # Benchmark gating
     run_pytest: bool = True

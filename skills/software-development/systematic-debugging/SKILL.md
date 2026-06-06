@@ -119,6 +119,26 @@ Refine based on test results. Once root cause is confirmed, fix it and verify.
 4. **每组一个 patch 辐射多个用例** — 修复工厂函数或最上游调用，而非逐一修每个用例
 5. **受限工具生效** — 当 `execute_code` 被 blocked（如 cron 安全模式），使用 `patch` 工具做批量替换
 
+### Phase-Gated Verification for Multi-Phase Changes
+
+When a fix or system change spans multiple phases (e.g., Phase A: cleanup → Phase B: infra setup → Phase C: reset), **do not start Phase N+1 until Phase N has been verified independently**. Stacking unverified changes creates cascading failures where a Phase A bug contaminates every subsequent phase's investigation.
+
+**Rules:**
+- Define phase gates upfront: for each phase, specify what must be verified before moving on
+- Run targeted verification tests on Phase N's specific changes before proceeding
+- If Phase N's verification fails, fix it before touching Phase N+1
+- Report verification results explicitly: "verified: [tests passed]" or "failed: [reasons]"
+- **Never skip verification between phases** — the cost of finding a Phase A bug during Phase C is 10x higher
+
+**Typical verification targets per phase type:**
+- **Cleanup phase:** files removed, processes gone, ports freed, cron jobs deleted, script references patched
+- **Infrastructure phase:** health endpoints responding, service status OK, config valid, dependencies installed
+- **Data phase:** schema intact, stored procedures valid, evolution/stats produced expected output
+
+**Multi-evidence verification:** For critical phase gates (e.g., confirming a decommissioned component is truly gone), verify from multiple independent sources — `ls` for files, `pgrep` for processes, `lsof` for ports, `cronjob list` for jobs, `grep -r` for script references. One source can produce a stale result; two independent sources confirming the same fact cannot.
+
+**Cross-reference:** See `writing-plans` skill's "Phase-based gating" section for planning guidance. This section covers the execution-time gating discipline.
+
 **Fixing rules:**
 - Fix the root cause, not the symptom
 - Write a regression test to prevent recurrence
@@ -270,10 +290,12 @@ write_file("/path/to/file", "new content")
 
 10. **macOS-symlink-redirection trap** — `cat > symlink` (and any `> symlink` redirection) follows the symlink chain and writes to the **target file**, not replacing the symlink itself. This corrupts real binaries if the symlink chain ends at a system file (e.g., a uv-managed Python binary). **Dangerous pattern:**
 
-11. **Stale-.pyc-bytecode blindspot** — Python's `__pycache__/` caches compiled bytecode and masks syntax errors,
+11. **Stale-.pyc-bytecode blindspot** — Python's `__pycache__` caches compiled bytecode and masks syntax errors,
     missing imports, and undefined functions introduced by file edits. A test suite that passed 90/90 one minute
     can fail with `0 collected` and `SyntaxError` / `NameError` / `ImportError` the next — **only after the cache
     is invalidated**. The stale cache makes the bugs invisible.
+
+12. **namespace-package-empty-directory** — `python3 -m <package>` fails with *"'<package>' is a package and cannot be directly executed"*. The module directory exists but contains **no Python files** at all (no `__init__.py`, `__main__.py`, or implementation files). Python treats it as a namespace package — a valid importable name with zero code — but can't execute it. The fix is to restore the files from git history rather than creating stubs. See `references/namespace-package-empty-directory.md` for the full diagnosis and recovery recipe.
 
     **How to detect:**
     - pytest shows `0 collected` with import/syntax errors you didn't see before

@@ -26,7 +26,7 @@ VAULT = Path("/Users/can/Documents/Obsidian Vault/_hermes")
 SKILLS_SRC = HERMES_HOME / "skills"
 SESSIONS_SRC = HERMES_HOME / "sessions"
 MEMORIES_SRC = HERMES_HOME / "memories"
-VIKING_SRC = HERMES_HOME / ".hermes_archive" / "openviking-data" / "viking" / "default"
+# VIKING_SRC = HERMES_HOME / ".hermes_archive" / "openviking-data" / "viking" / "default"  # REMOVED: OpenViking cleaned up
 CRON_SRC = HERMES_HOME / "cron" / "output"
 CONFIG_SRC = [
     HERMES_HOME / "config.yaml",
@@ -231,9 +231,10 @@ def sync_memories():
 
 
 def sync_knowledge_base():
-    """同步 OpenViking 知识库"""
+    """知识库同步 — 已停用（OpenViking 已清除）"""
     log("── 知识库 ──")
-    return rsync_copy(VIKING_SRC, VAULT_KB, "OpenViking 知识库")
+    log("  ⏭️  知识库同步已跳过（OpenViking 已清除）")
+    return 0
 
 
 def sync_cron_output():
@@ -275,7 +276,7 @@ def update_index(start_time: float, stats: dict):
 |------|------|------|
 | 会话历史 | {stats.get('sessions', 0):,} 个文件 | ~159M, 已同步到 `sessions/` |
 | 技能库 | {stats.get('skills', 0):,} 个文件 | ~63M, {stats.get('skill_categories', '?')} 个分类 |
-| 知识库 | {stats.get('knowledge_base', 0):,} 个文件 | OpenViking 知识库快照 |
+| 知识库 | {stats.get('knowledge_base', 0):,} 个文件 | （已停用） |
 | Cron 输出 | {stats.get('cron', 0):,} 个文件 | 定时任务输出日志 |
 | 持久记忆 | {stats.get('memories', 0):,} 个文件 | MEMORY.md + USER.md + Hindsight |
 | 配置参考 | {stats.get('config', 0):,} 个文件 | config.yaml + profiles |
@@ -287,7 +288,7 @@ def update_index(start_time: float, stats: dict):
 | `sessions/` | 会话历史记录（JSONL 格式） |
 | `skills/` | 技能库 — 所有 SKILL.md 按分类归档 |
 | `memories/` | 持久记忆 |
-| `knowledge-base/` | OpenViking 知识库内容快照 |
+| `knowledge-base/` | 知识库存档（已停用） |
 | `cron/` | 定时任务输出日志 |
 | `config/` | Hermes 配置参考 |
 

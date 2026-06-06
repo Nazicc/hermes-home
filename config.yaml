@@ -385,7 +385,7 @@ memory:
   user_profile_enabled: true
   memory_char_limit: 2200
   user_char_limit: 1375
-  provider: memory_tencentdb
+  provider: honcho
   flush_min_turns: 6
   nudge_interval: 10
 delegation:

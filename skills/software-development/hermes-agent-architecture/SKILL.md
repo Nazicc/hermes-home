@@ -512,6 +512,21 @@ DEFAULT_ARCHIVE_AFTER_DAYS = 90     # stale → archive after 90 days
 - No metrics tracking self-evolution effectiveness (improvement rate vs "nothing to save" frequency)
 - No A/B testing for review prompt quality
 
+### Separate: DSPy Evolver Pipeline (External)
+
+Independent from the three internal layers, Hermes also runs an **external DSPy MIPROv2-based evolver** 
+that optimizes skill content via prompt generation. This is NOT the curator — it modifies skill
+files directly using LLM-generated improvements, then deploys via a gate check.
+
+**Known failure mode: content collapse.** MIPROv2 can degenerate skill bodies to 7-13% of original
+size when no content-preservation metric exists. Mitigation:
+- Fidelity metric (Jaccard overlap + edit distance) at weight 0.15 in fitness composite
+- Triple-gate deploy: improvement > 0 AND fidelity composite > 0.3 AND size ≥ 30% of baseline
+- Minimum 60 training examples per skill; 20 MIPROv2 iterations
+
+See `references/evolver-content-collapse-mitigation.md` for full root-cause analysis, configuration,
+and verification procedure.
+
 ## Related Skills
 
 - `hermes-agent` — End-user CLI usage guide
@@ -530,3 +545,4 @@ The skill stores reference documents in its `references/` directory:
 |------|---------|
 | `references/self-evolution-architecture-deep-analysis.md` | Full deep analysis of the three-layer system: prompt details, fork inheritance strategy, safety mechanisms, CMA comparison, and identified gaps |
 | `references/self-improvement-loop.md` | Design doc referenced by `agent/background_review.py` docstring — covers philosophy, implementation architecture, trigger conditions, and known future directions |
+| `references/evolver-content-collapse-mitigation.md` | Root cause analysis and mitigation for DSPy MIPROv2 content collapse (7-13% body size degeneration), including fidelity metrics and triple-gate deploy |

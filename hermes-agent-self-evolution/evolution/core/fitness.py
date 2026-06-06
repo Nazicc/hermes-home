@@ -136,6 +136,79 @@ def skill_fitness_metric(example: dspy.Example, prediction: dspy.Prediction, tra
     return min(1.0, max(0.0, score))
 
 
+def compute_fidelity(baseline_text: str, evolved_text: str) -> dict:
+    """Compute content-preservation fidelity between baseline and evolved skill text.
+
+    Returns dict with:
+      - jaccard: token-level Jaccard similarity (0-1, 1=identical)
+      - jaccard_ngram: character trigram Jaccard (0-1, 1=identical)
+      - edit_distance_ratio: normalized Levenshtein ratio (0-1, 1=identical)
+      - fidelity_composite: weighted average of all three (0-1)
+
+    Used as a trend metric + deploy gate to prevent content collapse.
+    """
+    # Token-level Jaccard
+    baseline_tokens = set(baseline_text.lower().split())
+    evolved_tokens = set(evolved_text.lower().split())
+    if not baseline_tokens and not evolved_tokens:
+        jaccard = 1.0
+    elif not baseline_tokens or not evolved_tokens:
+        jaccard = 0.0
+    else:
+        overlap = len(baseline_tokens & evolved_tokens)
+        union = len(baseline_tokens | evolved_tokens)
+        jaccard = overlap / max(1, union)
+
+    # Character trigram Jaccard
+    def _ngrams(text: str, n: int = 3) -> set:
+        return {text[i:i+n] for i in range(len(text) - n + 1)} if len(text) >= n else {text}
+
+    baseline_ngrams = _ngrams(baseline_text)
+    evolved_ngrams = _ngrams(evolved_text)
+    if not baseline_ngrams and not evolved_ngrams:
+        ngram_jaccard = 1.0
+    elif not baseline_ngrams or not evolved_ngrams:
+        ngram_jaccard = 0.0
+    else:
+        overlap = len(baseline_ngrams & evolved_ngrams)
+        union = len(baseline_ngrams | evolved_ngrams)
+        ngram_jaccard = overlap / max(1, union)
+
+    # Normalized edit distance (Levenshtein)
+    def _edit_distance(a: str, b: str) -> int:
+        if len(a) < len(b):
+            a, b = b, a
+        prev = list(range(len(b) + 1))
+        for i, ca in enumerate(a):
+            curr = [i + 1]
+            for j, cb in enumerate(b):
+                cost = 0 if ca == cb else 1
+                curr.append(min(
+                    curr[j] + 1,        # insert
+                    prev[j + 1] + 1,    # delete
+                    prev[j] + cost,     # substitute
+                ))
+            prev = curr
+        return prev[-1]
+
+    max_len = max(len(baseline_text), len(evolved_text))
+    if max_len == 0:
+        edit_ratio = 1.0
+    else:
+        edit_dist = _edit_distance(baseline_text, evolved_text)
+        edit_ratio = 1.0 - (edit_dist / max_len)
+
+    # Composite: equally weighted
+    fidelity_composite = (jaccard + ngram_jaccard + edit_ratio) / 3.0
+
+    return {
+        "jaccard": round(jaccard, 4),
+        "jaccard_ngram": round(ngram_jaccard, 4),
+        "edit_distance_ratio": round(edit_ratio, 4),
+        "fidelity_composite": round(fidelity_composite, 4),
+    }
+
+
 def _parse_score(value) -> float:
     """Parse a score value, handling various LLM output formats."""
     if isinstance(value, (int, float)):

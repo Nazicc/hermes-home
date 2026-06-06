@@ -4,7 +4,7 @@ Daily Anthropic & Claude Blog Learner
 =====================================
 Scrapes new articles from anthropic.com/engineering and claude.com/blog,
 filters for agent-related content, extracts key insights,
-and writes structured knowledge to OpenViking knowledge base.
+and saves structured output for cronjob processing.
 
 Focus areas: agent architecture, context engineering, tool use, 
 multi-agent, managed agents, harness design, evals, coding agents.

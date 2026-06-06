@@ -381,15 +381,52 @@ cat ~/.hermes/cron/output/6cf04f3139de/2026-*.md | tail -60
 
 ---
 
-## CMA-ES Evolution Engine (Separate from Bridge Pipeline)
+## Skill Evolution Pipeline (MIPROv2 — Replaces CMA-ES Engine)
 
-Located at `~/.hermes/hermes-agent-self-evolution/evolution/`, this is a **standalone CMA-ES optimization engine** that uses DSPy GEPA (Graph-based Evolutionary Program Architecture) to evolve skill configurations. It exists independently from the bridge pipeline and has no integration with the runtime agent.
+⚠️ **The old CMA-ES/GEPA engine described in `references/cma-es-engine-analysis.md` has been replaced.** The actual running pipeline (cron job `self-evolution-cycle`, id `8a91ef5593a1`) now uses **DSPy MIPROv2 optimizer** via `evolution/skills/evolve_skill.py`, launched through `run-evolution.sh` → `python -m evolution.skills.evolve_skill`.
+
+**Unlike the old documented state, the current pipeline DOES have a deployment mechanism** — at line ~310 of `evolve_skill.py`:
+
+```python
+if improvement > 0:
+    skill_path.write_text(evolved_full)
+else:
+    log("⚠ 技能未改善 — 不部署")
+```
+
+However, this gate is **insufficient** — see the deployment pitfalls below.
+
+### Current Deployment Pitfalls
+
+| Issue | Detail | Impact |
+|-------|--------|--------|
+| **Content collapse** | MIPROv2 with small eval datasets (10 train, 5 val, 5 holdout) often produces drastically shortened skills: 3060→211 chars, 7145→947 chars | Most "evolved" skills lose all substantive content |
+| **Weak deployment gate** | `improvement > 0` doesn't catch content collapse — a skill can score 0.300→0.301 while losing 95% of content | Two skills per cycle fail deployment (improvement ≤ 0), but many that pass are degenerated |
+| **Score floor at 0.300** | Several skills (anfu-skill, threat-intel, vuln-assessment) stuck at exactly 0.300 — indicates eval data is too sparse to produce meaningful scores | Optimizer has no gradient signal for large/domain-heavy skills |
+| **Small eval datasets** | 10 train + 5 val + 5 holdout = too few examples for MIPROv2 to generalize | Optimizer overfits to trivial patterns; content degenerates |
+
+### Fixes to Apply
+
+**Urgent (size sanity gate):** Add a content-size ratio check to the deploy gate:
+```python
+size_ratio = len(evolved_full) / len(original_content)
+if improvement > 0 and size_ratio > 0.3:  # reject >70% content loss
+    skill_path.write_text(evolved_full)
+elif size_ratio <= 0.3:
+    log("⚠ 内容坍塌 — 不部署 (ratio={:.2f})".format(size_ratio))
+```
+
+**Medium-term:** Expand eval datasets to ≥50 samples per skill. Without sufficient evaluation data, MIPROv2 cannot meaningfully optimize large domain-specific skills.
+
+### Metrics from Latest Cycle
+
+See `references/miprov2-deployment-analysis.md` for the full metrics from the most recent self-evolution cycle (2026-06-07, 22 skills evolved, 2 blocked, ~20 deployed but content-collapsed).
 
 ### Engine Files
 
 | File | Path | Purpose | Size |
 |------|------|---------|------|
-| `skills/evolve_skill.py` | `evolution/skills/evolve_skill.py` | CMA-ES optimization loop using GEPA | 17.6 KB (most complex) |
+| `skills/evolve_skill.py` | `evolution/skills/evolve_skill.py` | **Active:** MIPROv2 optimization loop (replaces old GEPA). Deploys to `~/.hermes/skills/` if improvement > 0. | 17.6 KB |
 | `skills/skill_module.py` | `evolution/skills/skill_module.py` | Skill module abstraction layer | 5.7 KB |
 | `core/config.py` | `evolution/core/config.py` | Engine hyperparams (population, mutation, crossover) | 2.6 KB |
 | `core/fitness.py` | `evolution/core/fitness.py` | Fitness evaluation for skill quality | 6.5 KB |
@@ -404,15 +441,22 @@ Located at `~/.hermes/hermes-agent-self-evolution/evolution/`, this is a **stand
 4. **Evolves** skill parameters via CMA-ES (DSPy GEPA) in `evolve_skill.py`
 5. **Outputs** evolved skill candidates
 
-### Why It's Not Working
+### ⚠️ Status: Replaced by MIPROv2 Pipeline
 
-- The engine pulls from `~/.openclaw/agents/hermes-agent/sessions/` which is populated by Step 1 of the bridge pipeline — but Step 1 finds 0 sessions due to the column-name mismatch
-- The engine produces evolved skill candidates but has **no deployment mechanism** to push them back to `~/.hermes/skills/`
-- The engine was written against a V1 architecture that assumed the bridge pipeline + GEPA hooks would be fully operational
+**As of 2026-06-07, the CMA-ES/GEPA engine is no longer the active evolution pipeline.** The cron job `self-evolution-cycle` (id `8a91ef5593a1`) now uses `evolution/skills/evolve_skill.py` with DSPy MIPROv2, launched through `run-evolution.sh`. See the "Skill Evolution Pipeline (MIPROv2)" section above for the current system.
 
-### Integration Gap
+The old CMA-ES/GEPA engine (detailed in `references/cma-es-engine-analysis.md`) had:
+- **CMA-ES population-based optimization** (population 20, generations 10)
+- **GEPA module** for fitness-guided mutation
+- **No deployment mechanism** — candidates were written to the GEP assets dir but never pushed to `~/.hermes/skills/`
+- **No cron integration** — had to be run manually
+- **Input starvation** — `dataset_builder.py` read from sessions/ dir produced by the broken bridge Step 1
 
-The CMA-ES engine and the SimpleMem evolution store (5018 entries) are **completely disconnected**:
+The MIPROv2 replacement fixes the deployment gap (has a working gate) but introduces new issues — see the deployment pitfalls above.
+
+### Integration Gap (Historical)
+
+Before the MIPROv2 pipeline, the old CMA-ES engine and the SimpleMem evolution store were completely disconnected:
 
 ```
 SimpleMem Evolution (5018 entries)                          CMA-ES Engine (6 files)
@@ -420,6 +464,8 @@ SimpleMem Evolution (5018 entries)                          CMA-ES Engine (6 fil
     ↓ NO feedback to runtime                                    ↓ NO deployment to skills
     └─── write-only, no consumer                                └─── optimize-only, no publisher
 ```
+
+This gap was partially closed by the MIPROv2 pipeline (it reads skills and writes back to `~/.hermes/skills/`), but the evolution store data is still not consumed for runtime behavior modification.
 
 ---
 
@@ -583,7 +629,7 @@ tail -1 ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/rtk_metric
 | Config resets after `hermes config set` or install | Apply changes after SkillClaw runs, or run `restore_hermes_config.sh` |
 | **Evolution DB has 5000+ entries but nothing uses them** | This is by design — the store is write-only. To close the feedback loop, add a consumer that reads evolution entries and adjusts runtime behavior (e.g., tool selection, retry strategy, skill priority). |
 | **Genes never fire** | `run_agent.py` doesn't call `GeneStore.match()`. Add a gene-matching call in the conversation loop or tool execution pipeline. |
-| **CMA-ES engine doesn't produce usable output** | The engine's output has no deployment mechanism. Build a bridge from the engine's output (evolved skill candidates) to `~/.hermes/skills/`. |
+| **CMA-ES engine doesn't produce usable output** | ⚠️ **OUTDATED**: The CMA-ES engine has been replaced by the MIPROv2 pipeline. The MIPROv2 pipeline does deploy (writes to `~/.hermes/skills/`) but suffers from content collapse due to small eval datasets — see the Skill Evolution Pipeline section above. |
 | **Decay events stuck at weight=0.1** | Add a pruning threshold (e.g., delete entries that have been at floor for >30 days). The current scheduler decays to 0.1 then recurses infinitely. |
 | **All events.jsonl entries are identical** | `evolver_analysis.py` (when it ran) didn't track what it already processed. Any fix should include idempotency — track last-analyzed session ID and skip already-processed data. |
 | Cron job fails with "python: command not found" | Use full path: `~/.hermes/hermes-agent/venv/bin/python3` — plain `python3` may not be in the cron PATH |

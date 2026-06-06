@@ -3,7 +3,6 @@ import urllib.request, json, sys
 endpoints = [
     ('Gateway', 8642, '/health'),
     ('SkillClaw', 30000, '/health'),
-    ('OpenViking', 1934, '/health'),
     ('DeerFlow', 3000, '/api/health'),
     ('DeerFlow GW', 2026, '/api/health'),
 ]

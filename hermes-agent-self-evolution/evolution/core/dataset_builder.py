@@ -199,32 +199,11 @@ class SyntheticDatasetBuilder:
 
         return result
 
-    def generate(
-        self,
-        artifact_text: str,
-        artifact_type: str = "skill",
-        num_cases: Optional[int] = None,
-    ) -> EvalDataset:
-        """Generate a full eval dataset with train/val/holdout splits."""
-
-        n = num_cases or self.config.eval_dataset_size
-
-        # Use the already-configured global DSPy LM (which has api_base set)
-        # rather than creating a new one without api_base
-        with dspy.context():
-            result = self.generator(
-                artifact_text=artifact_text,
-                artifact_type=artifact_type,
-                num_cases=n,
-            )
-
-        # Parse the generated test cases
-        cases_raw = None
-        raw = result.test_cases
-
+    def _parse_raw_to_cases(self, raw: str) -> list[dict]:
+        """Parse raw LLM output (JSON or markdown) into a list of case dicts."""
         import re
 
-        # Strategy 0: strip markdown code fences first
+        cases_raw = None
         text = raw.strip()
         text = re.sub(r'^```(?:json)?\s*\n?', '', text)
         text = re.sub(r'\n?\s*```$', '', text)
@@ -248,17 +227,13 @@ class SyntheticDatasetBuilder:
         # Strategy 2: fix common LLM JSON quirks (single-quoted keys, trailing commas)
         if cases_raw is None:
             fixed = text
-            # Fix Python-style single quotes → JSON double quotes
-            # 1. Fix keys: 'key': -> "key":
             fixed = re.sub(r"'([a-zA-Z_][a-zA-Z0-9_]*)'\s*:", lambda m: '"' + m.group(1) + '":', fixed)
-            # 2. Fix values: : 'value' -> : "value" (with internal quote escaping)
             def _fix_value(m):
                 val = m.group(1)
                 val = val.replace('\\', '\\\\')
                 val = val.replace('"', '\\"')
                 return ': "' + val + '"'
             fixed = re.sub(r":\s*'([^']*)'", _fix_value, fixed)
-            # 3. Remove trailing commas before ] or }
             fixed = re.sub(r',(\s*[}\]])', r'\1', fixed)
             try:
                 cases_raw = json.loads(fixed)
@@ -270,11 +245,52 @@ class SyntheticDatasetBuilder:
             cases_raw = self._parse_markdown_list(text)
 
         if cases_raw is None:
+            return []
+
+        return cases_raw
+
+    def generate(
+        self,
+        artifact_text: str,
+        artifact_type: str = "skill",
+        num_cases: Optional[int] = None,
+    ) -> EvalDataset:
+        """Generate a full eval dataset with train/val/holdout splits.
+
+        Makes multiple smaller batch LLM requests (max 30 per batch) to
+        improve total sample yield, then merges and deduplicates results.
+        """
+
+        n = num_cases or self.config.eval_dataset_size
+        batch_size = min(30, n)
+        num_batches = max(1, (n + batch_size - 1) // batch_size)
+
+        # Use the already-configured global DSPy LM (which has api_base set)
+        all_cases = []
+        with dspy.context():
+            for batch_idx in range(num_batches):
+                result = self.generator(
+                    artifact_text=artifact_text,
+                    artifact_type=artifact_type,
+                    num_cases=batch_size,
+                )
+                batch_cases = self._parse_raw_to_cases(result.test_cases)
+                if batch_cases:
+                    all_cases.extend(batch_cases)
+
+        if not all_cases:
             raise ValueError(
-                f"Could not parse test cases from LLM output.\n"
-                f"Raw[:200]: {raw[:200]}\n"
-                f"After strip+code-fence-removal[:200]: {text[:200]}"
+                f"Could not parse any test cases from LLM output across {num_batches} batches."
             )
+
+        # Deduplicate by task_input
+        seen = set()
+        unique_cases = []
+        for c in all_cases:
+            key = c.get("task_input", "")
+            if key and key not in seen:
+                seen.add(key)
+                unique_cases.append(c)
 
         examples = [
             EvalExample(
@@ -284,7 +300,7 @@ class SyntheticDatasetBuilder:
                 category=c.get("category", "general"),
                 source="synthetic",
             )
-            for c in cases_raw
+            for c in unique_cases
             if c.get("task_input") and c.get("expected_behavior")
         ]
 

@@ -21,7 +21,7 @@ from rich.table import Table
 from evolution.core.config import EvolutionConfig, get_hermes_agent_path
 from evolution.core.dataset_builder import SyntheticDatasetBuilder, EvalDataset, GoldenDatasetLoader
 from evolution.core.external_importers import build_dataset_from_external
-from evolution.core.fitness import skill_fitness_metric, LLMJudge, FitnessScore
+from evolution.core.fitness import skill_fitness_metric, LLMJudge, FitnessScore, compute_fidelity
 from evolution.core.constraints import ConstraintValidator
 from evolution.skills.skill_module import (
     SkillModule,
@@ -192,6 +192,18 @@ def evolve(
     elapsed = time.time() - start_time
     console.print(f"\n  Optimization completed in {elapsed:.1f}s")
 
+    # ── 5b. Evaluate optimized module on valset ──────────────────────────
+    console.print(f"\n[bold]Evaluating optimized module on valset ({len(valset)} examples)[/bold]")
+    val_scores = []
+    for ve in valset:
+        with dspy.context(lm=lm):
+            val_pred = optimized_module(task_input=ve.task_input)
+            val_score = skill_fitness_metric(ve, val_pred)
+            val_scores.append(val_score)
+    avg_val = sum(val_scores) / max(1, len(val_scores))
+    val_best_score = avg_val  # GEPA already selects best, this is the post-hoc measurement
+    console.print(f"  Valset score (post-hoc): {avg_val:.4f}")
+
     # ── 6. Extract evolved skill text ───────────────────────────────────
     # MIPROv2 optimizes the predictor's signature instructions, not skill_text directly.
     # Extract the evolved instructions from the optimized predictor.
@@ -205,7 +217,30 @@ def evolve(
         console.print(f"  Evolved body: {len(evolved_body)} chars (from skill_text fallback)")
     evolved_full = reassemble_skill(skill["frontmatter"], evolved_body)
 
-    # ── 7. Validate evolved skill ───────────────────────────────────────
+    # ── 7a. Compute content fidelity (against baseline) ──────────────────
+    console.print(f"\n[bold]Computing content fidelity[/bold]")
+    baseline_body = skill["body"]
+    fidelity = compute_fidelity(baseline_body, evolved_body)
+    console.print(f"  Jaccard (token):     {fidelity['jaccard']:.4f}")
+    console.print(f"  Jaccard (trigram):   {fidelity['jaccard_ngram']:.4f}")
+    console.print(f"  Edit distance ratio: {fidelity['edit_distance_ratio']:.4f}")
+    console.print(f"  Composite:           {fidelity['fidelity_composite']:.4f}")
+
+    # Check fidelity sanity: evolved must not be too degenerate
+    config = EvolutionConfig()
+    fidelity_passed = fidelity["fidelity_composite"] >= config.min_content_fidelity
+    icon = "✓" if fidelity_passed else "✗"
+    color = "green" if fidelity_passed else "red"
+    console.print(f"  [{color}]{icon} Fidelity ≥ {config.min_content_fidelity} (min_content_fidelity)[/{color}]")
+
+    # ── 7b. Size sanity check ───────────────────────────────────────────
+    min_size = 0.3 * len(baseline_body)
+    size_passed = len(evolved_body) >= min_size
+    size_icon = "✓" if size_passed else "✗"
+    size_color = "green" if size_passed else "red"
+    console.print(f"  [{size_color}]{size_icon} Size ≥ {min_size:.0f} chars (30% of baseline)[/{size_color}] ({len(evolved_body)} chars)")
+
+    # ── 8. Validate evolved skill ───────────────────────────────────────
     console.print(f"\n[bold]Validating evolved skill[/bold]")
     evolved_constraints = validator.validate_all(evolved_full, "skill", baseline_text=skill["body"])
     all_pass = True
@@ -232,15 +267,16 @@ def evolve(
 
     baseline_scores = []
     evolved_scores = []
+    judge = LLMJudge(judge_model=eval_model)
     for ex in holdout_examples:
         # Score baseline
         with dspy.context(lm=lm):
             baseline_pred = baseline_module(task_input=ex.task_input)
-            baseline_score = skill_fitness_metric(ex, baseline_pred)
+            baseline_score = judge.score(ex, baseline_pred).normalized_score
             baseline_scores.append(baseline_score)
 
             evolved_pred = optimized_module(task_input=ex.task_input)
-            evolved_score = skill_fitness_metric(ex, evolved_pred)
+            evolved_score = judge.score(ex, evolved_pred).normalized_score
             evolved_scores.append(evolved_score)
 
     avg_baseline = sum(baseline_scores) / max(1, len(baseline_scores))
@@ -296,6 +332,12 @@ def evolve(
         "improvement": improvement,
         "baseline_size": len(skill["body"]),
         "evolved_size": len(evolved_body),
+        "fidelity_jaccard": fidelity["jaccard"],
+        "fidelity_jaccard_ngram": fidelity["jaccard_ngram"],
+        "fidelity_edit_distance": fidelity["edit_distance_ratio"],
+        "fidelity_composite": fidelity["fidelity_composite"],
+        "fidelity_passed": fidelity_passed,
+        "size_sanity_passed": size_passed,
         "train_examples": len(dataset.train),
         "val_examples": len(dataset.val),
         "holdout_examples": len(dataset.holdout),
@@ -307,8 +349,28 @@ def evolve(
     console.print(f"  Output saved to {output_dir}/")
 
     # ── 11. Auto-deploy to original skill ────────────────────────────────
+    deploy_reasons = []
+    skip_reasons = []
     if improvement > 0:
+        deploy_reasons.append(f"improved by {improvement:+.3f}")
+    else:
+        skip_reasons.append(f"score did not improve ({improvement:+.3f})")
+
+    if fidelity_passed:
+        deploy_reasons.append("fidelity OK")
+    else:
+        skip_reasons.append(f"fidelity {fidelity['fidelity_composite']:.3f} < min {config.min_content_fidelity}")
+
+    if size_passed:
+        deploy_reasons.append("size OK")
+    else:
+        skip_reasons.append(f"size {len(evolved_body)} < 30% baseline ({min_size:.0f})")
+
+    should_deploy = improvement > 0 and fidelity_passed and size_passed
+
+    if should_deploy:
         console.print(f"\n[bold]Deploying evolved skill to original location[/bold]")
+        console.print(f"  Reasons: {', '.join(deploy_reasons)}")
         try:
             # Backup original
             backup_path = Path("output") / skill_name / timestamp / "_original_backup.md"
@@ -326,7 +388,8 @@ def evolve(
             console.print(f"  Deploy manually: cp {output_dir / 'evolved_skill.md'} {skill_path}")
             metrics["deployed"] = False
     else:
-        console.print(f"\n[yellow]⚠ Skill did not improve — not deploying[/yellow]")
+        console.print(f"\n[yellow]⚠ Not deploying — {', '.join(skip_reasons)}[/yellow]")
+        console.print(f"  Passing gates: {', '.join(deploy_reasons) if deploy_reasons else 'none'}")
         console.print(f"  Evolved variant saved at {output_dir}/evolved_skill.md")
         metrics["deployed"] = False
 
