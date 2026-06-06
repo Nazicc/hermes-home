@@ -795,6 +795,7 @@ plugins:
   enabled:
   - evolution-recorder
   - rtk-rewrite
+  - honcho
   disabled: []
 session_reset:
   at_hour: 4
