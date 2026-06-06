@@ -172,25 +172,57 @@ git stash drop stash@{N}
 
 **Primary remote for skill pushes: `home`**
 
-bash
+```bash
 git remote -v
 # home   git@github.com:user/hermes.git (fetch)
 # origin git@github.com:other/repo.git (fetch)
 
 # Push to home:
 git push home main
-
+```
 
 The `origin` remote may contain unrelated force-pushed history. Always confirm the correct remote before pushing.
 
 Before force-pushing:
 
-bash
+```bash
 git fetch origin
 git log origin/main..HEAD  # review unpushed commits
-
+```
 
 Avoid `git push --force` on main branches. Use `git push --force-with-lease` as a safer alternative.
+
+### Push Timeout Troubleshooting (Large `.git`, Small Delta)
+
+When `~/.hermes/` has accumulated years of history (multi-GiB `.git/` directory) but only a small delta to push (few dozen MB), standard `git push` may time out at the default 120–180s limit. The issue is not the pack size but the remote's delta computation and object enumeration over a large ref namespace.
+
+**Diagnose the real push size:**
+
+```bash
+# Apparent .git size (inflated, includes loose objects + packs)
+du -sh .git
+
+# Real pack data size — this is what actually travels over the wire
+git count-objects -vH
+
+# Number of new objects to push
+git rev-list --objects main --not origin/main | git cat-file --batch-check='%(objecttype) %(objectsize:disk) %(rest)' | head -20
+
+# Total new object count
+git rev-list --count main --not origin/main
+```
+
+**When push times out repeatedly (HTTPS *and* SSH both fail):**
+
+```bash
+# Background push with generous timeout (up to 600s via terminal tool)
+# Use notify_on_complete=true so you're alerted when it finishes
+cd ~/.hermes
+git push origin main
+```
+If the terminal tool's limit is still hit, split into smaller batches or push during low-network-usage hours.
+
+**Why both HTTPS and SSH can time out:** The bottleneck is typically on GitHub's side — delta computation against a deep ref history from a repo with many years of commits. Protocol choice (HTTPS vs SSH) doesn't change the server-side workload. The solution is patience (longer timeout) or thinning history (`git gc --aggressive`, or pruning old refs if safe).
 
 ## Pre-Commit Dirty Tree Audit
 
