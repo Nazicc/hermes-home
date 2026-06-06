@@ -135,5 +135,12 @@ state.db-wal
 skills/skill_stats.json
 .update_check
 
+# ═══ Memory system runtime ═══
+simplemem-data/
+# ═══ Pre-update snapshots (too large for git) ═══
+state-snapshots/
+# Nested git repos (not submodules)
+hermes-office/
+
 # Animus companion data
 animus-data/

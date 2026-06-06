@@ -123,13 +123,14 @@ Refine based on test results. Once root cause is confirmed, fix it and verify.
 - Fix the root cause, not the symptom
 - Write a regression test to prevent recurrence
 - For complex fixes, use incremental-implementation skill
-- After fix, re-run the original failing case, then run full test suite
+- **MANDATORY: After EVERY fix, run manual regression verification.** Do NOT say "it should work now", "ready to test when you are", "theoretically fixed", or "will work on next schedule tick". Actually invoke the fix (trigger the command, run the test, call the function) and confirm the output is correct. Coverage: at minimum the original failing case + a smoke test of related functionality. If the fix can't be exercised immediately (e.g., scheduled job), trigger it manually (cronjob action='run') and verify the output file.
 
-**Verification checklist:**
-- [ ] Original error is gone
-- [ ] Related functionality still works
-- [ ] Regression test passes
-- [ ] No new errors in logs
+**Verification checklist (MUST complete all items):**
+- [ ] Original error is gone — manually triggered and confirmed
+- [ ] Related functionality still works — smoke test passed
+- [ ] Regression test passes — test suite run and all passing
+- [ ] No new errors in logs — checked after verification
+- [ ] User is told actual output/results, not promises
 
 **If hypothesis was wrong:** Return to Phase 2 with new evidence.
 

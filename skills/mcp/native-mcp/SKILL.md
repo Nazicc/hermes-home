@@ -188,6 +188,7 @@ launchctl load ~/Library/LaunchAgents/com.hermes.<name>.plist
 | ModuleNotFoundError | The MCP server's venv must have all required packages |
 | Port conflicts | HTTP transport servers must use unique ports |
 | macOS `grep -P` fails | macOS grep lacks `-P`. Use `grep -E` or `awk`. |
+| Compiled binary hangs for stdio MCP | `bun build --compile` (and similar) produce binaries that may hang or crash for stdio MCP — compiled binary strips stdio expectations many MCP SDKs require for JSON-RPC handshake over stdin/stdout. Fix: use source runner (`bun run src/cli.ts serve`, `python mcp_server.py`, `node dist/index.js`). |
 
 ### Direct JSON-RPC Tool Testing
 
