@@ -192,11 +192,78 @@ git log origin/main..HEAD  # review unpushed commits
 
 Avoid `git push --force` on main branches. Use `git push --force-with-lease` as a safer alternative.
 
+## Pre-Commit Dirty Tree Audit
+
+Before committing changes in the Hermes repo (`~/.hermes/`), especially after complex multi-step sessions (Phase work, component removal, skill creation), perform a systematic audit to avoid committing garbage or losing intentional changes.
+
+### Step-by-Step Audit
+
+```bash
+# 1. Full overview — captures ALL changes (tracked + untracked)
+git status --short
+
+# 2. Size the changes — how much code vs config was touched
+git diff --stat
+
+# 3. Review each modified file — verify every change is intentional
+for f in $(git diff --name-only); do
+  echo "=== $f ===" && git diff "$f"
+done
+
+# 4. Audit each untracked directory — identify garbage vs valuable content
+du -sh */ 2>/dev/null   # per-directory sizes
+ls -d */                # list all untracked dirs that are gitignored or new
+```
+
+### Classify Every Change
+
+Every change in the dirty tree falls into one of three buckets:
+
+| Bucket | Examples | Action |
+|--------|----------|--------|
+| **Intentional** | config changes, skill edits, new knowledge | Stage and commit |
+| **Garbage** | state-snapshots, temp files, transient data | Delete or add to `.gitignore` |
+| **Uncertain** | large new directories, nested git repos | Pause and decide before committing |
+
+### Common Garbage to Catch
+
+**State snapshots** — `state-snapshots/YYYYMMDD-*/` (can be 700MB+). These are auto-created by Hermes pre-update and MUST NEVER be committed. Add to `.gitignore`:
+
+```
+# state-snapshots/ — pre-update snapshots, never commit
+state-snapshots/
+```
+
+**Transient runtime directories** — `simplemem-data/`, `simplemem_lite/`, `venv/`, `__pycache__/`, `.ruff_cache/`. Already commonly gitignored, but verify after any major session.
+
+**Nested git repos** — A directory with a `.git/` folder but NOT listed in `.gitmodules` is a nested repo, not a submodule. These appear as empty in `git status` but their content has separate git history. Decide:
+- If it's a one-off exploration → delete it (not tracked by parent)
+- If it's valuable → add as proper submodule
+- If it's permanent infrastructure → leave in .gitignore
+
+### Verify knowledge-base/ Content
+
+The `knowledge-base/` directory has special handling:
+- Tracked subdirs (01-产品体系, 02-安服业务线, 03-行业方案, 04-National Standards) were committed before gitignore rules
+- New untracked subdirs (e.g. 04-等保标准体系, 05-等保测评模板) need explicit decision: commit them to git (good for portability) or add to `.gitignore` (good for repo size)
+- Large dirs (26MB+12MB) push the repo size — consider `.gitignore` if they're machine-local copies
+- `hermes-atlas/` inside knowledge-base has its own `.git/` — NOT a submodule, must be explicitly handled
+
+After adding new knowledge-base content and updating `knowledge-base/README.md`, always verify the README diff captured the index correctly:
+
+```bash
+git diff knowledge-base/README.md
+```
+
 ## Summary Checklist
 
 - [ ] Use `execute_code` (Python `open()`) to create skill files — verifies parent directories exist
 - [ ] Verify file exists immediately after writing
 - [ ] Run pre-destruction checks before any destructive git command
+- [ ] Run **pre-commit dirty tree audit** before any commit in Hermes repo
+- [ ] Classify EVERY change: intentional vs garbage vs uncertain
+- [ ] Check state-snapshots/ and other transient dirs — delete garbage, update `.gitignore`
+- [ ] Check knowledge-base/ new subdirs — decide git vs gitignore
 - [ ] Commit immediately after `git add`
 - [ ] Never use `git reset --hard` to unstage — use `git reset HEAD -- <path>` instead
 - [ ] Use `git stash push -m "message" -- <specific-paths>` for targeted stashes
