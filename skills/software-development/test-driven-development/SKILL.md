@@ -2,8 +2,8 @@
 name: test-driven-development
 description: "Use when implementing any feature or bugfix, before writing implementation code. Enforces RED-GREEN-REFACTOR cycle with test-first approach and optional BDD spec-first phase (write SPEC.md first, then tests until RED, then code until GREEN). NOT for: one-off scripts, documentation-only changes, or trivial changes where tests provide no value."
 category: general
-trigger: [write a test, tdd, test-first, red green, before writing the implementation, "\u5192\u70DF\
-    \u6D4B\u8BD5", smoke test]
+trigger: [write a test, tdd, test-first, red green, before writing the implementation, "\u5192\u70DF\u6D4B\u8BD5", smoke test, "\u4EE3\u7801\u5185\u5316.*\u6D4B\u8BD5", "\u8865\u5168\u6D4B\u8BD5", "\u91CD\u5199\u6D4B\u8BD5", retrofit test, "\u73B0\u6709\u4EE3\u7801.*\u6D4B\u8BD5"]
+anti_trigger: [debug, already passing, one-off script, "\u65B0\u5EFA\u9879\u76EE"]
 anti_trigger: [debug, already passing, one-off script]
 ---
 
@@ -62,6 +62,14 @@ class SimpleMem:
         return key in self._store
 
 
+## Retrofitting Tests to Existing Code
+
+When adding/fixing tests for **code that already exists** (not greenfield TDD), the primary failure mode is **API signature drift** — tests assume method signatures, parameter names, or class constructors that don't match the actual implementation.
+
+**Protocol:** Read every source file → verify all class constructors with `inspect.signature()` → build a mapping table of `(what tests assume → what API actually is)` → fix all mismatches in one batch before running pytest.
+
+Full reference: `references/retrofitting-tests-to-existing-code.md` — includes the two-layer verification protocol, common drift categories table, and recovery workflow.
+
 ## BDD→TDD Workflow (Recommended for Non-Trivial Features)
 
 When starting a feature or module, begin with a BDD spec phase:
@@ -80,6 +88,33 @@ When starting a feature or module, begin with a BDD spec phase:
 - Use `pytest --lf` (last-failed) to focus on just-failed tests during debugging.
 - Use `pytest.mark.parametrize` for testing multiple inputs.
 - **Namespace package conflict**: If `import mypackage` fails but pytest can find it, you may have a namespace package conflict (e.g., a site-packages `mypackage` directory conflicts with your `mypackage` project package). In that case, use `pip install -e .` (editable install) to ensure the project directory is on `sys.path`, or rename your package to avoid the conflict.
+
+### Diagnosing "No tests collected" (silent skip)
+
+Pytest can silently report "No tests collected" (exit code 4) even when your test file is syntactically valid. This is NOT the same as a test failure (exit code 1) — it means pytest couldn't find any test functions to run.
+
+**Two-layer diagnostic:**
+
+```
+Layer 1 — Check the test file itself:
+  python -c "import ast; ast.parse(open('tests/test_*.py').read()); print('AST OK')"
+  python -c "import test_module"   # confirm the module imports without error
+
+Layer 2 — Check pytest collection:
+  pytest tests/test_*.py -v --collect-only   # verbose collection output
+  echo $?   # exit code 4 = collection error, 0/5 = no tests found
+  python -m pytest tests/ -v --log-cli-level=DEBUG   # see why files were skipped
+```
+
+**Common root causes:**
+
+| Symptom | Root Cause | Fix |
+|---|---|---|
+| `python -c "import test_module"` succeeds but `pytest tests/test_*.py` collects nothing | Package not installed in editable mode (pytest 9.x is stricter about this) | `pip install -e .` |
+| `python -c "import test_module"` fails | Test file has an import error | Fix the import or install missing deps |
+| `--collect-only` shows files but 0 tests | No functions named `test_*` in file | Rename functions or add `test_` prefix |
+| `--log-cli-level=DEBUG` shows "skipped" with collection error | conftest.py has a silent import error upstream | Check conftest.py's conftest.py for circular imports |
+| `pytest tests/` passes but `pytest single_file.py` doesn't | conftest.py from parent `tests/` not loaded | Run from project root with `python -m pytest` |
 
 ### Running Tests
 

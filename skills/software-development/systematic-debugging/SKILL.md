@@ -118,6 +118,7 @@ Refine based on test results. Once root cause is confirmed, fix it and verify.
 3. **按根因分组** — 把失败用例归入 3-5 个根因类别（如：A=非法字段、B=缺必需参数、C=模式不匹配、D=上下文判断）。用 count 量化影响："17 cases via A, 7 via B, 3 via C, 1 via D"
 4. **每组一个 patch 辐射多个用例** — 修复工厂函数或最上游调用，而非逐一修每个用例
 5. **受限工具生效** — 当 `execute_code` 被 blocked（如 cron 安全模式），使用 `patch` 工具做批量替换
+6. **Read real interfaces per source group** — After grouping failures, read the actual model/constructor signatures for each group. Compare field-by-field against fixture definitions. For the full workflow, see `references/fixture-model-contract-repair.md`.
 
 ### Phase-Gated Verification for Multi-Phase Changes
 
@@ -369,3 +370,5 @@ write_file("/path/to/file", "new content")
 - **hermes-agent-diagnostics** (skills/hermes-agent-diagnostics/SKILL.md) — For Hermes system-level issues, start here first.
 - **deerflow-commander** (skills/deerflow-commander/SKILL.md) — Delegate deep research on unfamiliar technologies during debugging.
 - **Dict type aliases** (`references/python-dict-type-aliases.md`) — Python `dict[str, Any]` alias gotcha: attribute access vs subscript access, diagnosis, and bulk-fix workflow for test code.
+- **Fixture-model contract repair** (`references/fixture-model-contract-repair.md`) — When test fixtures fail because model APIs changed: read constructors, categorize mismatches (imports / field names / enum values / constructor args), fix bottom-up, validate each layer.
+- **pytest collection failure rootdir** (`references/pytest-collection-failure-rootdir.md`) — pytest 9.0.2 CLI `-c /dev/null` breaks rootdir detection → silent "No tests collected" (exit 4). Diagnosis checklist, root cause analysis, and fix approaches.

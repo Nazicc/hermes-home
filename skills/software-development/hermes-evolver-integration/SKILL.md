@@ -60,7 +60,8 @@ tail -5 ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/rtk_metric
 - **Cron job** runs but achieves nothing — Step 1 finds 0 sessions, Step 2 script is absent.
 
 **What IS working:**
-- The agent runtime has **built-in evolution data collection** — `SessionEventLog` in `run_agent.py` records tool calls, session summaries, and turn-level metrics directly to `simplemem_evolution/evolution.db` (3805 `tool_call_*` entries, 628 date-prefixed turn entries, 244 session summaries).
+- **`simplemem_memory_bridge.py` (cron */30)** is the **primary writer** to evolution.db — ~6577 entries in `YYYYMMDD_HHMMSS_-tool-*` format, dominating recent records. This is a separate write path from the evolver bridge, processing ended sessions with LLM importance extraction. See `references/evolution-data-flow-topology.md`.
+- The agent runtime has **legacy evolution data collection** — `SessionEventLog` in `run_agent.py` records tool calls, session summaries, and turn-level metrics (3805 `tool_call_*` entries, 628 date-prefixed turn entries, 244 session summaries) — but this path appears inactive for recent sessions.
 - The **SimpleMem decay scheduler** runs every 120s in the background, applying weight decay to evolution entries.
 - The **CMA-ES engine** (6 files in `~/.hermes/hermes-agent-self-evolution/evolution/`) is fully written but never integrated with the bridge pipeline or the runtime agent.
 
@@ -367,7 +368,7 @@ cronjob --trigger 6cf04f3139de
 | `~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/events.jsonl` | EvolutionEvents (written by analysis) |
 | `~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/signals.json` | Detected signals + summary (written by analysis) |
 | `~/.hermes/cron/output/6cf04f3139de/*.md` | Cron job reports |
-| `~/.hermes/simplemem_evolution/evolution.db` | Persistent EvolutionEvent store (3234+ entries) |
+| `~/.hermes/simplemem_evolution/evolution.db` | Persistent EvolutionEvent store (7314+ entries as of 2026-06-07 — two concurrent write paths) |
 
 ### View Cycle Output
 
@@ -526,7 +527,10 @@ Genes were designed for a future integration that was never built. To activate t
 
 ## Evolution DB Entry Categories (Deep Analysis)
 
-Full analysis at `references/evolution-db-deep-analysis.md` (5018 entries as of 2026-06-04):
+Full analysis at `references/evolution-db-deep-analysis.md` (5018 entries as of 2026-06-04).
+**🔔 Updated topology at `references/evolution-data-flow-topology.md` — 7314 entries as of 2026-06-07 with corrected write-path analysis (two concurrent data sources + new entry_id patterns).**
+
+Legacy (5018-entry) category breakdown:
 
 | Category | Pattern | Count | Avg Weight | Meaning |
 |----------|---------|-------|------------|---------|
@@ -538,7 +542,8 @@ Full analysis at `references/evolution-db-deep-analysis.md` (5018 entries as of 
 
 ### Key Observations
 
-1. **Write-only store** — Agent runtime INSERTs data but nothing SELECTs it for runtime behavior modification
+1. **Two write paths, one store** — Two independent processes (`simplemem_memory_bridge.py` and legacy `SessionEventLog`) write to the same DB with incompatible entry_id formats and different weight strategies. See `references/evolution-data-flow-topology.md`.
+2. **Stale decay** — Entries decay to weight 0.1 floor but are never pruned (no threshold-based deletion)
 2. **Stale decay** — Entries decay to weight 0.1 floor but are never pruned (no threshold-based deletion)
 3. **Identical events** — All 23 `evt_*` events have the same `signal_score: 0.985` and same signal types — indicates `evolver_analysis.py` (when it ran) analyzed the same snapshot repeatedly
 4. **Heavy tool_call bias** — 75% of all entries are tool-level; no higher-level behavior patterns are derived
@@ -627,7 +632,7 @@ tail -1 ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/rtk_metric
 | Sessions not syncing | Check `~/.openclaw/agents/hermes-agent/sessions/` — even after fixing the column names, verify that the bridge is writing `.json` files there |
 | **TLS timeouts on MacBook** | Use the ARK Volcengine endpoint documented above |
 | Config resets after `hermes config set` or install | Apply changes after SkillClaw runs, or run `restore_hermes_config.sh` |
-| **Evolution DB has 5000+ entries but nothing uses them** | This is by design — the store is write-only. To close the feedback loop, add a consumer that reads evolution entries and adjusts runtime behavior (e.g., tool selection, retry strategy, skill priority). |
+| **Evolution DB has 7300+ entries but nothing uses them** | Two write paths (bridge cron */30 + legacy runtime) both INSERT into `evolution.db` but nothing SELECTs for runtime behavior modification. See `references/evolution-data-flow-topology.md` for the full topology and write-path breakdown. To close the loop: add a consumer that reads evolution entries and adjusts runtime behavior (e.g., tool selection, retry strategy, skill priority). |
 | **Genes never fire** | `run_agent.py` doesn't call `GeneStore.match()`. Add a gene-matching call in the conversation loop or tool execution pipeline. |
 | **CMA-ES engine doesn't produce usable output** | ⚠️ **OUTDATED**: The CMA-ES engine has been replaced by the MIPROv2 pipeline. The MIPROv2 pipeline does deploy (writes to `~/.hermes/skills/`) but suffers from content collapse due to small eval datasets — see the Skill Evolution Pipeline section above. |
 | **Decay events stuck at weight=0.1** | Add a pruning threshold (e.g., delete entries that have been at floor for >30 days). The current scheduler decays to 0.1 then recurses infinitely. |

@@ -1,0 +1,2 @@
+[console_scripts]
+prof-synapse = professor_synapse.cli:main

@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-capability-shelf"
+version = "0.1.0"
+description = "AI场景能力货架 — 五层架构模块化、标准化、场景化封装体系"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.0",
+    "pyyaml>=6.0",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+cap-shelf = "ai_capability_shelf.cli:cli"
+cap-shelf-build = "ai_capability_shelf.lifecycle:run_build_pipeline"
+
+[tool.setuptools.packages.find]
+include = ["ai_capability_shelf*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+norecursedirs = [".git", ".pytest_cache", "__pycache__", "*.egg-info"]

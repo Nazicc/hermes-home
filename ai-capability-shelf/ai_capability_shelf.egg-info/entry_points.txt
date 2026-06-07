@@ -1,0 +1,3 @@
+[console_scripts]
+cap-shelf = ai_capability_shelf.cli:cli
+cap-shelf-build = ai_capability_shelf.lifecycle:run_build_pipeline
