@@ -1,0 +1,137 @@
+{
+  "skill_name": "hermes-five-step-production-upgrade",
+  "skill_path": "/Users/can/.hermes/skills/hermes-five-step-production-upgrade/SKILL.md",
+  "skill_raw": "---\nname: hermes-five-step-production-upgrade\ndescription: Hermes 五步爆改 — 将原生轻量网关升级为生产级满配Agent系统的完整方案。涵盖基座升级、Agent内核补齐、工具生态扩容、安全权限加固、运维治理五大步骤。\ntrigger: user mentions \"爆改\", \"满配\", \"五步改造\", \"生产级\", \"升级Hermes\", \"production upgrade\"\nanti_trigger: simple config questions, basic model switching, single feature inquiries\ncategory: infrastructure\n---\n\n# Hermes 五步爆改打造满配版AI Agent网关\n\n## 核心思路\n\n原生Hermes是轻量AI模型转发网关，功能单薄仅适合入门测试。通过以下五步改造，可升级为具备多模型调度、完整智能能力、多租户、安全防护、自动化运维的生产级满配Agent系统。\n\n## 第一步 基座升级 & 多模型融合\n\n**目标：** 解决部署混乱、单模型限制、调度僵化\n\n- 本体版本升级、环境依赖修复\n- 容器化封装（Docker）\n- 本地 + 云端多模型接入\n- 动态路由配置：按任务类型/优先级/成本调度\n- 跨平台部署支持（个人/团队/云端）\n\n## 第二步 补齐AI Agent智能内核\n\n**目标：** 解决记忆混乱、复杂任务无法拆解、异常任务卡死\n\n- 部署四层分层记忆（工作记忆/短期/长期/持久）\n- 新增任务规划引擎（复杂任务拆解为子步骤）\n- 集成自省纠错模块（执行异常自动回退重试）\n- 意图识别路由（根据用户输入自动分派到对应skill/agent）\n- 会话状态管理（支持多轮上下文、断点续跑）\n\n## 第三步 工具生态扩容与管控\n\n**目标：** 解决工具少、无管控、自定义接入难\n\n- 集成通用原子工具（搜索、浏览器、文件、代码执行、图片、计算等）\n- 搭建标准化工具货架（统一注册/发现/调用协议）\n- 黑白名单 + 限流 + 参数校验（调用安全管控）\n- 循环调用拦截（防止工具递归死循环）\n- 开放自定义工具接口（第三方/企业工具接入SDK）\n\n## 第四步 安全权限 & 多租户加固\n\n**目标：** 解决单人限制、数据串扰、无安全防护\n\n- RBAC角色权限（admin/editor/viewer/guest）\n- 多租户数据/记忆/配置隔离（独立目录+命名空间）\n- Prompt注入防御（注入检测+过滤+沙箱）\n- 数据脱敏（敏感字段自动遮蔽）\n- IP黑白名单 + 调用限流 + API配额管理\n\n## 第五步 运维监控 & 自动化治理\n\n**目标：** 解决问题无法溯源、人工运维成本高、资源泄漏\n\n- 全链路日志埋点 + 自动切割轮转\n- 可视化监控面板（调用量/成功率/延迟/资源）\n- 分级告警（>3次失败=警告，>10次=紧急，磁盘>85%=告警）\n- 深浅休眠自治理（空闲释放资源，忙时快速唤醒）\n- 自动化巡检（每日凌晨：健康检查+日志清理+资源回收）\n\n## 能力对比\n\n| 维度 | 原生 | 满配改造后 |\n|------|------|-----------|\n| 定位 | 简易网关 | 生产级Agent系统 |\n| 模型 | 单模型 | 多模型动态路由 |\n| 智能能力 | 无内核 | 完整Agent能力（规划+记忆+纠错） |\n| 工具 | 少量工具 | 标准化工具生态+风控 |\n| 使用规模 | 单人单机 | 多租户团队 |\n| 安全 | 无防护 | 全维度安全边界 |\n| 运维 | 纯人工 | 自动化监控+告警+巡检 |\n\n## 部署环境适配\n\n| 场景 | 配置要求 | 部署方式 |\n|------|---------|---------|\n| 个人本地 | 8G内存+4G显存 | 原生包手动配置 |\n| 团队私有化 | 16G内存+8G显存 | Docker容器化 |\n| 云端商用 | 云服务器+弹性算力+负载均衡 | Kubernetes/ECS |\n\n## 上线验收清单\n\n1. **功能校验：** 模型切换、任务拆解、记忆读写、工具调用、自定义能力\n2. **安全校验：** 注入攻击测试、越权访问、数据脱敏、IP限制\n3. **性能校验：** 并发、耗时、长时间稳定性、内存泄漏\n4. **运维校验：** 日志切割、监控告警、休眠恢复、自动化巡检\n\n## 高频踩坑 & 避坑要点\n\n- 版本依赖不匹配导致启动报错 → 统一锁定所有依赖版本\n- 多租户记忆目录未隔离造成数据串扰 → 强制每个租户独立目录\n- 自定义工具缺失参数校验带来安全漏洞 → 工具接入前安全审核\n- 日志无切割引发磁盘空间占满 → 日志轮转必须配置\n- 多模型路由权重不合理导致负载失衡 → 按实际性能动态调整\n- 休眠阈值配置异常影响使用体验 → 结合业务访问量校准\n\n## 完整运转闭环\n\n```\n请求接入 → 多模型路由分发 → Agent内核执行\n    → 工具调用 + 安全校验 → 租户隔离处理\n    → 日志监控上报 → 空闲休眠治理 / 异常告警\n    → 自动化巡检 → 长期循环运行\n```\n\n## Agent Rules\n\n1. 改造Hermes优先完成五步核心流程，先夯实基座、内核、工具、权限、运维五大基础，再叠加进阶能力\n2. 所有改造版本严格统一Python、模型、Hermes本体依赖版本，规避版本兼容类启动报错\n3. 多租户场景必须单独隔离记忆、配置、文件存储目录，杜绝不同租户数据串扰\n4. 工具层强制开启入参校验、调用限流、循环检测，自定义工具接入前必须做安全审核\n5. 安全层面完整部署Prompt注入检测、IP黑白名单、数据脱敏，补齐原生网关的安全短板\n6. 生产/多用户环境务必开启日志切割、分级告警、自动化巡检，避免日志膨胀与无人值守故障\n7. 根据部署场景选择对应方案：个人用原生部署，团队/私有化优先Docker容器化部署\n8. 深浅休眠阈值结合业务访问量配置，兼顾空闲资源治理与正常请求响应速度\n9. 改造完成后必须执行全维度验收，覆盖功能、安全、性能、运维四大类测试项再正式上线\n",
+  "skill_frontmatter": "name: hermes-five-step-production-upgrade\ndescription: Hermes 五步爆改 — 将原生轻量网关升级为生产级满配Agent系统的完整方案。涵盖基座升级、Agent内核补齐、工具生态扩容、安全权限加固、运维治理五大步骤。\ntrigger: user mentions \"爆改\", \"满配\", \"五步改造\", \"生产级\", \"升级Hermes\", \"production upgrade\"\nanti_trigger: simple config questions, basic model switching, single feature inquiries\ncategory: infrastructure",
+  "skill_body": "# Hermes 五步爆改打造满配版AI Agent网关\n\n## 核心思路\n\n原生Hermes是轻量AI模型转发网关，功能单薄仅适合入门测试。通过以下五步改造，可升级为具备多模型调度、完整智能能力、多租户、安全防护、自动化运维的生产级满配Agent系统。\n\n## 第一步 基座升级 & 多模型融合\n\n**目标：** 解决部署混乱、单模型限制、调度僵化\n\n- 本体版本升级、环境依赖修复\n- 容器化封装（Docker）\n- 本地 + 云端多模型接入\n- 动态路由配置：按任务类型/优先级/成本调度\n- 跨平台部署支持（个人/团队/云端）\n\n## 第二步 补齐AI Agent智能内核\n\n**目标：** 解决记忆混乱、复杂任务无法拆解、异常任务卡死\n\n- 部署四层分层记忆（工作记忆/短期/长期/持久）\n- 新增任务规划引擎（复杂任务拆解为子步骤）\n- 集成自省纠错模块（执行异常自动回退重试）\n- 意图识别路由（根据用户输入自动分派到对应skill/agent）\n- 会话状态管理（支持多轮上下文、断点续跑）\n\n## 第三步 工具生态扩容与管控\n\n**目标：** 解决工具少、无管控、自定义接入难\n\n- 集成通用原子工具（搜索、浏览器、文件、代码执行、图片、计算等）\n- 搭建标准化工具货架（统一注册/发现/调用协议）\n- 黑白名单 + 限流 + 参数校验（调用安全管控）\n- 循环调用拦截（防止工具递归死循环）\n- 开放自定义工具接口（第三方/企业工具接入SDK）\n\n## 第四步 安全权限 & 多租户加固\n\n**目标：** 解决单人限制、数据串扰、无安全防护\n\n- RBAC角色权限（admin/editor/viewer/guest）\n- 多租户数据/记忆/配置隔离（独立目录+命名空间）\n- Prompt注入防御（注入检测+过滤+沙箱）\n- 数据脱敏（敏感字段自动遮蔽）\n- IP黑白名单 + 调用限流 + API配额管理\n\n## 第五步 运维监控 & 自动化治理\n\n**目标：** 解决问题无法溯源、人工运维成本高、资源泄漏\n\n- 全链路日志埋点 + 自动切割轮转\n- 可视化监控面板（调用量/成功率/延迟/资源）\n- 分级告警（>3次失败=警告，>10次=紧急，磁盘>85%=告警）\n- 深浅休眠自治理（空闲释放资源，忙时快速唤醒）\n- 自动化巡检（每日凌晨：健康检查+日志清理+资源回收）\n\n## 能力对比\n\n| 维度 | 原生 | 满配改造后 |\n|------|------|-----------|\n| 定位 | 简易网关 | 生产级Agent系统 |\n| 模型 | 单模型 | 多模型动态路由 |\n| 智能能力 | 无内核 | 完整Agent能力（规划+记忆+纠错） |\n| 工具 | 少量工具 | 标准化工具生态+风控 |\n| 使用规模 | 单人单机 | 多租户团队 |\n| 安全 | 无防护 | 全维度安全边界 |\n| 运维 | 纯人工 | 自动化监控+告警+巡检 |\n\n## 部署环境适配\n\n| 场景 | 配置要求 | 部署方式 |\n|------|---------|---------|\n| 个人本地 | 8G内存+4G显存 | 原生包手动配置 |\n| 团队私有化 | 16G内存+8G显存 | Docker容器化 |\n| 云端商用 | 云服务器+弹性算力+负载均衡 | Kubernetes/ECS |\n\n## 上线验收清单\n\n1. **功能校验：** 模型切换、任务拆解、记忆读写、工具调用、自定义能力\n2. **安全校验：** 注入攻击测试、越权访问、数据脱敏、IP限制\n3. **性能校验：** 并发、耗时、长时间稳定性、内存泄漏\n4. **运维校验：** 日志切割、监控告警、休眠恢复、自动化巡检\n\n## 高频踩坑 & 避坑要点\n\n- 版本依赖不匹配导致启动报错 → 统一锁定所有依赖版本\n- 多租户记忆目录未隔离造成数据串扰 → 强制每个租户独立目录\n- 自定义工具缺失参数校验带来安全漏洞 → 工具接入前安全审核\n- 日志无切割引发磁盘空间占满 → 日志轮转必须配置\n- 多模型路由权重不合理导致负载失衡 → 按实际性能动态调整\n- 休眠阈值配置异常影响使用体验 → 结合业务访问量校准\n\n## 完整运转闭环\n\n```\n请求接入 → 多模型路由分发 → Agent内核执行\n    → 工具调用 + 安全校验 → 租户隔离处理\n    → 日志监控上报 → 空闲休眠治理 / 异常告警\n    → 自动化巡检 → 长期循环运行\n```\n\n## Agent Rules\n\n1. 改造Hermes优先完成五步核心流程，先夯实基座、内核、工具、权限、运维五大基础，再叠加进阶能力\n2. 所有改造版本严格统一Python、模型、Hermes本体依赖版本，规避版本兼容类启动报错\n3. 多租户场景必须单独隔离记忆、配置、文件存储目录，杜绝不同租户数据串扰\n4. 工具层强制开启入参校验、调用限流、循环检测，自定义工具接入前必须做安全审核\n5. 安全层面完整部署Prompt注入检测、IP黑白名单、数据脱敏，补齐原生网关的安全短板\n6. 生产/多用户环境务必开启日志切割、分级告警、自动化巡检，避免日志膨胀与无人值守故障\n7. 根据部署场景选择对应方案：个人用原生部署，团队/私有化优先Docker容器化部署\n8. 深浅休眠阈值结合业务访问量配置，兼顾空闲资源治理与正常请求响应速度\n9. 改造完成后必须执行全维度验收，覆盖功能、安全、性能、运维四大类测试项再正式上线",
+  "skill_description": "Hermes 五步爆改 — 将原生轻量网关升级为生产级满配Agent系统的完整方案。涵盖基座升级、Agent内核补齐、工具生态扩容、安全权限加固、运维治理五大步骤。",
+  "dataset_path": null,
+  "golden_dataset_path": null,
+  "artifact_type": "skill",
+  "strategy": "GEPA",
+  "iterations": 5,
+  "num_cases": 50,
+  "skip_deploy": false,
+  "skip_dataset_generation": false,
+  "dataset_from_session": false,
+  "dataset_from_session_db": false,
+  "validate_only": false,
+  "num_threads": 16,
+  "dataset_dir": "datasets/skills/hermes-five-step-production-upgrade",
+  "has_dataset": true,
+  "train_count": 15,
+  "val_count": 7,
+  "holdout_count": 8,
+  "baseline_constraints": [
+    {
+      "constraint_name": "size_limit",
+      "passed": true,
+      "message": "Size OK: 2643/15000 chars",
+      "details": null
+    },
+    {
+      "constraint_name": "non_empty",
+      "passed": true,
+      "message": "Artifact is non-empty",
+      "details": null
+    },
+    {
+      "constraint_name": "skill_structure",
+      "passed": true,
+      "message": "Skill has valid frontmatter (name + description)",
+      "details": null
+    }
+  ],
+  "baseline_all_passed": true,
+  "optimizer_type": "MIPROv2",
+  "optimization_elapsed": 438.1921410560608,
+  "optimizer_predictor_elapsed": 1.0967254638671875e-05,
+  "optimizer_compile_elapsed": 438.1920771598816,
+  "evolved_body": "predictor = Predict(StringSignature(skill_instructions, task_input -> output\n    instructions='你是一名精通Hermes满配版AI Agent网关的技术专家。请根据下文提供的技能说明（Skill Instructions），用中文回答用户提出的操作疑问。回答必须详细、实用，并做到：\\n- 对关键步骤和建议，使用“应”“必须”等指令性结构予以强调；\\n- 结合实际部署场景，提供具体、可执行的解释；\\n- 当涉及常见错误或风险时，明确给出“避坑提示”；\\n- 采用分条、分标题或步骤列表等方式清晰组织内容，使回答可直接作为操作指南。\\n务必基于技能说明中的改造步骤、规则和警告，确保答案准确且具备可操作性。\\n\\n[**注**：新指令要求生成答案时必须融入“应/必须”等要求，避免笼统描述，同时强制加入避坑要点，与数据集目标对齐。]'\n    skill_instructions = Field(annotation=str required=True json_schema_extra={'desc': 'The skill instructions to follow', '__dspy_field_type': 'input', 'prefix': 'Skill Instructions:'})\n    task_input = Field(annotation=str required=True json_schema_extra={'desc': 'The task to complete', '__dspy_field_type': 'input', 'prefix': 'Task Input:'})\n    output = Field(annotation=str required=True json_schema_extra={'desc': 'Your response following the skill instructions', '__dspy_field_type': 'output', 'prefix': 'Output:'})\n))",
+  "evolved_full": "---\nname: hermes-five-step-production-upgrade\ndescription: Hermes 五步爆改 — 将原生轻量网关升级为生产级满配Agent系统的完整方案。涵盖基座升级、Agent内核补齐、工具生态扩容、安全权限加固、运维治理五大步骤。\ntrigger: user mentions \"爆改\", \"满配\", \"五步改造\", \"生产级\", \"升级Hermes\", \"production upgrade\"\nanti_trigger: simple config questions, basic model switching, single feature inquiries\ncategory: infrastructure\n---\n\npredictor = Predict(StringSignature(skill_instructions, task_input -> output\n    instructions='你是一名精通Hermes满配版AI Agent网关的技术专家。请根据下文提供的技能说明（Skill Instructions），用中文回答用户提出的操作疑问。回答必须详细、实用，并做到：\\n- 对关键步骤和建议，使用“应”“必须”等指令性结构予以强调；\\n- 结合实际部署场景，提供具体、可执行的解释；\\n- 当涉及常见错误或风险时，明确给出“避坑提示”；\\n- 采用分条、分标题或步骤列表等方式清晰组织内容，使回答可直接作为操作指南。\\n务必基于技能说明中的改造步骤、规则和警告，确保答案准确且具备可操作性。\\n\\n[**注**：新指令要求生成答案时必须融入“应/必须”等要求，避免笼统描述，同时强制加入避坑要点，与数据集目标对齐。]'\n    skill_instructions = Field(annotation=str required=True json_schema_extra={'desc': 'The skill instructions to follow', '__dspy_field_type': 'input', 'prefix': 'Skill Instructions:'})\n    task_input = Field(annotation=str required=True json_schema_extra={'desc': 'The task to complete', '__dspy_field_type': 'input', 'prefix': 'Task Input:'})\n    output = Field(annotation=str required=True json_schema_extra={'desc': 'Your response following the skill instructions', '__dspy_field_type': 'output', 'prefix': 'Output:'})\n))",
+  "fidelity_score": 0.0242,
+  "fidelity_details": {
+    "jaccard": 0.0,
+    "jaccard_ngram": 0.0146,
+    "edit_distance_ratio": 0.0578,
+    "fidelity_composite": 0.0242
+  },
+  "evolved_constraints": [
+    {
+      "constraint_name": "size_limit",
+      "passed": true,
+      "message": "Size OK: 1283/15000 chars",
+      "details": null
+    },
+    {
+      "constraint_name": "growth_limit",
+      "passed": true,
+      "message": "Growth OK: -51.5% (max +20.0%)",
+      "details": null
+    },
+    {
+      "constraint_name": "non_empty",
+      "passed": true,
+      "message": "Artifact is non-empty",
+      "details": null
+    },
+    {
+      "constraint_name": "skill_structure",
+      "passed": true,
+      "message": "Skill has valid frontmatter (name + description)",
+      "details": null
+    }
+  ],
+  "evolved_all_passed": true,
+  "holdout_results": {
+    "baseline_avg": 0.0,
+    "evolved_avg": 0.0,
+    "improvement": 0.0,
+    "improvement_pct": 0,
+    "holdout_count": 5,
+    "baseline_scores": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "evolved_scores": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "original_size": 2300,
+    "evolved_size": 941,
+    "size_change": -1359
+  },
+  "output_dir": "/Users/can/.hermes/hermes-agent-self-evolution/output",
+  "output_evolved_path": "/Users/can/.hermes/hermes-agent-self-evolution/output/hermes-five-step-production-upgrade_evolved.md",
+  "output_report_path": "/Users/can/.hermes/hermes-agent-self-evolution/output/hermes-five-step-production-upgrade_report.md",
+  "deploy_applied": false,
+  "deploy_backup_path": null,
+  "completed_phases": [
+    "phase_optimize",
+    "phase_fidelity",
+    "phase_validate_evolved",
+    "phase_evaluate",
+    "phase_deploy",
+    "phase_validate_baseline",
+    "phase_loader",
+    "phase_dataset"
+  ],
+  "started_at": 1780941725.980484,
+  "_version": 1,
+  "_completed_phases": [
+    "phase_optimize",
+    "phase_fidelity",
+    "phase_validate_evolved",
+    "phase_evaluate",
+    "phase_deploy",
+    "phase_validate_baseline",
+    "phase_loader",
+    "phase_dataset"
+  ]
+}
