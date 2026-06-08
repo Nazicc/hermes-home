@@ -1,16 +1,16 @@
 model:
-  api_key: ${SILICONFLOW_API_KEY}
+  api_key: sk-2f9c26650c6c49c8b452029fd21eb72f
   api_mode: ''
-  base_url: https://api.siliconflow.cn/v1
+  base_url: https://api.deepseek.com/v1
   context_length: 131072
-  default: deepseek-ai/DeepSeek-V4-Flash
+  default: deepseek-v4-flash
   max_tokens: 16384
   provider: custom
 providers: {}
 fallback_providers:
-- api_key: ${SILICONFLOW_API_KEY}
-  base_url: https://api.siliconflow.cn/v1
-  model: deepseek-ai/DeepSeek-V4-Flash
+- api_key: sk-2f9c26650c6c49c8b452029fd21eb72f
+  base_url: https://api.deepseek.com
+  model: deepseek-v4-flash
   provider: custom
 credential_pool_strategies: {}
 toolsets:

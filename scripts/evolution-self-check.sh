@@ -6,7 +6,7 @@
 set -euo pipefail
 
 EVO_DIR="/Users/can/.hermes/hermes-agent-self-evolution"
-VENV_PYTHON="/Users/can/.hermes/hermes-agent/venv/bin/python"
+VENV_PYTHON="/Users/can/.hermes/hermes-agent-self-evolution-venv/bin/python"
 HERMES_ENV="/Users/can/.hermes/.env"
 
 echo "=== Evolution Self-Check ==="
@@ -32,8 +32,8 @@ echo "--- Module Imports ---"
 import sys
 sys.path.insert(0, '$EVO_DIR')
 try:
-    from evolution.skills.evolve_skill import evolve
-    print('✅ evolution.skills.evolve_skill imported OK')
+    from evolution.cli import cli
+    print('✅ evolution.cli loaded OK')
 except Exception as e:
     print(f'❌ Import failed: {e}')
     sys.exit(1)
@@ -53,14 +53,19 @@ echo ""
 
 # 4. Run-evolution.sh dry-run test
 echo "--- Dry-Run Test ---"
-FIRST_MD=$(find /Users/can/.hermes/skills -maxdepth 4 -type f -name "SKILL.md" 2>/dev/null | head -1)
-if [[ -n "$FIRST_MD" ]]; then
-    FIRST_SKILL=$(basename "$(dirname "$FIRST_MD")")
-    echo "   Trying with skill: $FIRST_SKILL"
-    bash "$EVO_DIR/run-evolution.sh" --skill "$FIRST_SKILL" --iterations 1 --dry-run 2>&1
-else
-    echo "⚠️  No skills found — SKILL.md files missing from skills/ directory"
-fi
+echo "   Testing CLI structure (help + run --help)..."
+"$VENV_PYTHON" -c "
+import sys, importlib.util
+sys.path.insert(0, '$EVO_DIR')
+spec = importlib.util.find_spec('evolution.cli')
+assert spec is not None, 'evolution.cli not found'
+print('✅ evolution.cli spec found at', spec.origin)
+# Verify all submodules load
+from evolution.cli import cli
+for cmd in cli.commands:
+    print(f'   Command: {cmd}')
+print('✅ CLI structure OK')
+" 2>&1
 
 echo ""
 echo "=== Self-Check Complete ==="

@@ -751,10 +751,26 @@ tail -1 ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/rtk_metric
 
 ## Regression Testing
 
-After any change, always run the full skill validation:
+After any change, run the applicable test suite:
 
-bash
+### Skill Validation (General)
+
+```bash
 python3 /tmp/validate_skills.py --path ~/.hermes/skills/
-
+```
 
 Expected: "All checks passed." — 0 errors, 0 warnings across all skills.
+
+### SimpleMem Evolution MCP System Test
+
+After changes to the evolution store, genes, or decay scheduler, run the **5-step MCP-based protocol:**
+
+1. **Config Health** — `mcp_simplemem_evolution_evolution_status` → all subsystems healthy
+2. **EvolutionStore** — `mcp_simplemem_evolution_evolution_stats` → total_entries > 0
+3. **WorkingMemory** — `mcp_simplemem_evolution_working_memory_list` → call succeeds
+4. **GeneStore** — `mcp_simplemem_evolution_gene_list` + `gene_match(context=...)` → gene patterns match correctly
+5. **DecayScheduler** — `mcp_simplemem_evolution_evolution_decay` → returns decayed/forgotten counts
+
+Full protocol and automated check script: `references/evolution-regression-testing.md`.
+
+---
