@@ -8,18 +8,38 @@ category: general
 
 Note: The bridge scripts were relocated from `~/.hermes/hermes-agent/scripts/` to `~/.hermes/` (repo root). All cron jobs reference the repo-root paths.
 
-Hermes state.db
-    ↓ Step 1: hermes_to_evolver_bridge.py (cron every 4h) — **standalone, at ~/.hermes/**
-~/.openclaw/agents/hermes-agent/sessions/
-    ↓ Step 2: evolver_analysis.py (cron follows Step 1) — **standalone, at ~/.hermes/**
-~/.hermes/hermes-agent/hermes-agent-self-evolution/
-    assets/gep/
-    ├── events.jsonl       ← EvolutionEvent records (written by evolver_analysis.py)
-    ├── signals.json        ← errsig detection output (by evolver_analysis.py)
-    ├── rtk_metrics.jsonl   ← Per-session RTK scores (loaded by evolver_analysis.py)
-    └── (capsules.json and GEPA hooks are legacy — not part of current cron pipeline)
-    ↓ Step 3: (No separate script — evolver_analysis.py writes to BOTH GEP dir and evolution.db)
+### Primary Data Flow (Paths A + E/F, Current Working Set)
+
+```
+WRITE PATH A: simplemem_memory_bridge.py (CRON */30) — PRIMARY WRITER (~90% of entries)
+Hermes state.db ─→ simplemem_memory_bridge.py ─→ SimpleMem Evolution Store
+(sessions table)                                    (evolution.db)
+
+WRITE PATHS E+F: Dual-Path Bridge Architecture (Phase C, 2026-06-08)
+See `references/evolution-bridge-dual-path.md` for full details.
+
+Path E: evolver_to_simplemem.py (standalone script, cron/adhoc)
+~/.hermes/hermes-agent-self-evolution/assets/gep/events.jsonl
+    ↓ evolver_to_simplemem.py (checkpoint-based, max 100 events/run)
 SimpleMem Evolution Store (~/.hermes/simplemem_evolution/evolution.db)
+
+Path F: bridge_finalize_and_decay (MCP tool, runtime sync)
+Hermes Agent Runtime (SimpleMemSystem.finalize())
+    ↓ bridge_finalize_and_decay MCP tool (upsert + decay_all)
+SimpleMem Evolution Store (~/.hermes/simplemem_evolution/evolution.db)
+```
+
+### Legacy (Broken/Inactive) Paths
+
+```
+WRITE PATH B: Runtime SessionEventLog — DORMANT (no longer writing)
+WRITE PATH C: hermes_to_evolver_bridge + evolver_analysis.py — BROKEN
+  (column mismatch in Step 1, script missing in Step 2)
+WRITE PATH D: evolution-recorder plugin — MISSING (files never git-committed)
+```
+
+See `references/evolution-data-flow-topology.md` for the full six-path breakdown, and
+`references/evolution-bridge-dual-path.md` for the dual-path architecture (Paths E+F).
 
 
 **RTK (Runtime Kernel) metrics** track signal/quality scores over time, logged to:
@@ -31,7 +51,7 @@ bash
 tail -5 ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/rtk_metrics.jsonl | jq
 
 
-### Key Paths (Current Cron Pipeline)
+### Key Paths (Current Architecture — see `references/evolution-bridge-dual-path.md` and `references/evolution-data-flow-topology.md` for full write-path topology)
 
 | Component | Path |
 |-----------|------|
@@ -39,10 +59,14 @@ tail -5 ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/rtk_metric
 | Evolver scan dir | `~/.openclaw/agents/hermes-agent/sessions/` |
 | GEP output dir | `~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/` |
 | Bridge script (Step 1) | `~/.hermes/hermes_to_evolver_bridge.py` |
-| Analysis script (Step 2) | `~/.hermes/evolver_analysis.py` |
+| Step 2 (missing) | `~/.hermes/evolver_analysis.py` — **never committed, do not rely on** |
+| Path E bridge script | `~/.hermes/evolver_to_simplemem.py` — standalone, checkpoint-based sync |
+| Path F MCP tool | `bridge_finalize_and_decay` — in `simplemem_evolution_mcp.py` |
 | SimpleMem Evolution DB | `~/.hermes/simplemem_evolution/evolution.db` |
-| Cron job | "Hermes-Evolver Bridge + Analysis" (job_id: `6cf04f3139de`, every 4h — now runs BOTH scripts) |
+| Cron job (Step 1 only) | "Hermes-Evolver Bridge + Analysis" (job_id: `6cf04f3139de`, every 4h — runs only Step 1) |
+| Cron job (Path E) | Proposed — `evolver_to_simplemem.py` at `30 */4 * * *` (offset from bridge cron) |
 | Hermes agent venv | `~/.hermes/hermes-agent/venv/bin/python3` (use this, NOT plain `python3`, for cron) |
+| MCP server venv | `~/.hermes/mcp-venv/bin/python3` (for Evolution Store services/genes) |
 
 ### Local Hooks (Claude Code)
 
@@ -76,7 +100,7 @@ Neither path closes the feedback loop to the running agent. Data accumulates but
 - `evolver_analysis.py` — missing script; the cron pipeline cannot proceed without it
 - Bridge column-name mismatch blocks Step 1 — fix requires updating SQL to match state.db's actual schema
 - All 23 events in `events.jsonl` are identical (same signals, same score=0.985) — the script that ran once analyzed the same dataset repeatedly
-- Gene system (20 genes in `genes.json`) has `usage_count: 0` on all genes — `run_agent.py` never calls `GeneStore.match()`
+- Gene system (~7 pattern-trigger genes, as optimized 2026-06-08) has `usage_count: 0` on all genes — `run_agent.py` never calls `GeneStore.match()`
 
 ---
 
@@ -295,16 +319,26 @@ tail -5 ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/capsules.j
 
 ---
 
-## Step 3: Evolution Store Persistence (Handled by Step 2)
+## Step 3: Evolution Store Persistence (Dual-Path Bridge)
 
-No separate script needed — `evolver_analysis.py` writes EvolutionEvents directly to `~/.hermes/simplemem_evolution/evolution.db` using SQLite INSERT OR IGNORE.
+**evolver_analysis.py is MISSING and NOT the current Step 3.** Two working paths persist data to evolution.db:
 
-Verify with:
-```bash
-sqlite3 ~/.hermes/simplemem_evolution/evolution.db "SELECT COUNT(*) FROM evolution_entries;"
-```
+**Path E — Standalone Script (`evolver_to_simplemem.py`):**
+Batch-syncs evolver analysis output (events.jsonl) to the evolution store.
+- **File:** `~/.hermes/evolver_to_simplemem.py`
+- **Source:** `~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/events.jsonl`
+- **Mechanism:** Reads events from checkpointed line offset, writes via direct SQLite (INSERT OR IGNORE)
+- **Invocation:** `~/.hermes/hermes-agent/venv/bin/python3 ~/.hermes/evolver_to_simplemem.py`
+- **Idempotent:** Tracks last-processed line number via checkpoint file
+- **Max batch:** 100 events per run
 
-**Schema:**
+**Path F — MCP Tool (`bridge_finalize_and_decay`):**
+Real-time sync from Hermes Agent runtime after `SimpleMemSystem.finalize()`.
+- **Exposed by:** `simplemem_evolution_mcp.py` (MCP server)
+- **Behavior:** Receives JSON list of entry_ids → upsert into evolution.db → trigger decay_all()
+- **Returns:** `{registered_count, decayed_count, forgotten_count}`
+
+Both paths write to the **same schema:**
 ```sql
 CREATE TABLE evolution_entries (
     entry_id   TEXT PRIMARY KEY,
@@ -316,9 +350,22 @@ CREATE TABLE evolution_entries (
 );
 ```
 
+### Verify with:
+
+```bash
+# Check entry count
+sqlite3 ~/.hermes/simplemem_evolution/evolution.db "SELECT COUNT(*) FROM evolution_entries;"
+
+# Check write path breakdown by entry_id prefix
+sqlite3 ~/.hermes/simplemem_evolution/evolution.db \
+  "SELECT substr(entry_id,1,15) AS prefix, COUNT(*) FROM evolution_entries GROUP BY prefix ORDER BY COUNT(*) DESC LIMIT 10;"
+```
+
 ### Gene Approval Workflow (Legacy)
 
-The old GEPA pipeline produced capsules in `capsules.json` for human review. The current `evolver_analysis.py` pipeline skips this — signals and events are written directly to both the GEP directory and the Evolution Store. If capsule-based approval is needed, the old `hermes-agent-self-evolution` repo's GEPA tools can be run independently (they are not part of the cron pipeline).
+The old GEPA pipeline produced capsules in `capsules.json` for human review. The current pipeline (Path E) skips this — events are synced directly. If capsule-based approval is needed, the old `hermes-agent-self-evolution` repo's GEPA tools can be run independently.
+
+For the full dual-path architecture comparison, see `references/evolution-bridge-dual-path.md`.
 
 ---
 
@@ -352,10 +399,17 @@ cronjob --trigger 6cf04f3139de
 
 **Cron schedule:** `0 */4 * * *` (every 4 hours). Last run visible at `~/.hermes/cron/output/6cf04f3139de/`.
 
-### Adding Step 3 to Cron
+### Adding Path E (evolver_to_simplemem.py) to Cron
 
-1. Edit the cron job prompt to include running `evolver_to_simplemem.py` after Step 2.
-2. Or add a separate cron job that runs `evolver_to_simplemem.py` every 4h on a 30-min offset from the bridge job.
+```bash
+cronjob --schedule "30 */4 * * *" \
+  --prompt "Run evolver_to_simplemem.py to sync events.jsonl to evolution.db" \
+  --script ~/.hermes/evolver_to_simplemem.py
+```
+
+This runs 30 min after the Hermes-Evolver Bridge cron (which fires at `0 */4 * * *`), allowing the bridge pipeline time to produce new events.
+
+Or add as a fallback in the bridge cron's prompt: add `~/.hermes/hermes-agent/venv/bin/python3 ~/.hermes/evolver_to_simplemem.py` to the end of the existing cron job's prompt.
 
 ---
 
@@ -368,7 +422,8 @@ cronjob --trigger 6cf04f3139de
 | `~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/events.jsonl` | EvolutionEvents (written by analysis) |
 | `~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/signals.json` | Detected signals + summary (written by analysis) |
 | `~/.hermes/cron/output/6cf04f3139de/*.md` | Cron job reports |
-| `~/.hermes/simplemem_evolution/evolution.db` | Persistent EvolutionEvent store (7314+ entries as of 2026-06-07 — two concurrent write paths) |
+| `~/.hermes/simplemem_evolution/evolution.db` | Persistent EvolutionEvent store (two concurrent write paths: simplemem_memory_bridge.py cron + evolver_to_simplemem.py) |
+| `~/.hermes/evolver_bridge_checkpoint.txt` | Checkpoint file for Path E incremental sync |
 
 ### View Cycle Output
 
@@ -473,43 +528,93 @@ This gap was partially closed by the MIPROv2 pipeline (it reads skills and write
 ## Gene System (SimpleMem Genes)
 
 **File:** `~/.hermes/simplemem_evolution/genes.json`
-**Count:** 20 genes, all `enabled: true`
 **Entity Type:** Trigger-action rules for adaptive behavior
 
-### Gene Structure Example
+### Trigger & Action Types
 
-```json
-{
-  "gene_id": "gene_tool_error_retry",
-  "name": "Tool Error Retry",
-  "triggers": [
-    {"type": "error", "value": "tool_error"},
-    {"type": "keyword", "value": "retry"}
-  ],
-  "actions": [
-    {"type": "remember", "value": "When tool X fails with error Y, try approach Z"},
-    {"type": "suggest", "value": "Consider fallback method"}
-  ],
-  "enabled": true,
-  "usage_count": 0,
-  "success_count": 0,
-  "failure_count": 0
-}
+**Trigger types** (defined in `GeneTrigger` class):
+| Type | Behavior | Example |
+|------|----------|---------|
+| `keyword` | Case-insensitive substring match in context string | `"session_end"` matches any context containing `session_end` |
+| `pattern` | Compiled regex (case-insensitive with `(?i)`) | `"(?i)\\bsession[ _-]?end\\b"` matches `session_end`, `Session end`, `session-end` |
+| `error` | Matches error-type contexts | `"tool_error"` |
+| `action` | Matches specific action context | `"memorize"` |
+
+**Action types** (validated server-side):
+| Type | Behavior |
+|------|----------|
+| `remember` | Store a fact in the evolution store |
+| `suggest` | Return a suggestion text for context injection |
+| `script` | Execute a script (by name/path) |
+
+⚠️ **Only these 3 action types are valid.** Passing any other type (e.g. `reduce_weight`, `boost_weight`) causes `GeneAction` validation to log errors and silently ignore the action.
+
+### Current Genes (~7 pattern-trigger genes, as of 2026-06-08)
+
+| Gene ID | Trigger Patterns | Purpose |
+|---------|-----------------|---------|
+| `ctx_session_end` | `\\bsession[ _-]?end\\b`, 会话结束, compaction | Consolidate session decisions on end |
+| `decay_tool_output_noise` | `tool.*output`, terminal noise, tool noise | Reduce weight of noisy tool output |
+| `boost_user_profile` | My name is, i am, my role is, 用户信息, 我叫 | Boost user-identity memories |
+| `pattern_phase_tracking` | phase/stage/step/iteration N | Track multi-phase progress |
+| `err_secret_guard` | api_key, sk-, secret, token, password, 密钥, 密码 | Flag potential secret leaks |
+| `boost_security_operations` | cve, cvss, 漏洞, security, incident, 应急, 威胁 | Prioritize security-related memories |
+| `ctx_config_validation` | config, setting, setup, configure, init, 初始化, 配置 | Validate config-related context |
+
+### Local Testing (Without MCP Server)
+
+The MCP server caches `genes.json` in memory at startup. To test gene changes before restarting:
+
+```bash
+cd ~/.hermes/simplemem_evolution
+
+# Use MCP venv (has pydantic installed)
+MCP_PYTHON=/Users/can/.hermes/mcp-venv/bin/python3
+
+# Quick: load genes and count
+$MCP_PYTHON -c "
+from gene_store import GeneStore
+store = GeneStore()
+print(f'Loaded {len(store._genes)} genes')
+print(f'Gene IDs: {[g.gene_id for g in store._genes]}')
+"
+
+# Test pattern matching against specific contexts
+$MCP_PYTHON -c "
+from gene_store import GeneStore
+store = GeneStore()
+
+contexts = [
+    'session_end',
+    '会话结束',
+    'compaction notice',
+    'tool terminal output noisy',
+    'my name is can',
+    'phase 1 completed',
+    'api_key=sk-xxx',
+    'cve-2024-1234',
+    'config.yaml',
+    'random text',
+]
+for ctx in contexts:
+    match = store.match(ctx)
+    result = match.gene_id if match else '(no match)'
+    print(f'{ctx:>30s} \u2192 {result}')
+"
 ```
 
-### 20 Genes Defined
+`GeneStore.match(context)` returns **`Optional[Gene]`** (a single Gene object, **not** a list). Do not iterate the return value.
 
-| Category | Genes | Purpose |
-|----------|-------|---------|
-| Error Recovery | `tool_error_retry`, `tool_error_fallback`, `error_memory`, `error_context` | Handle tool failures |
-| Quality | `quality_verify_result`, `quality_increase_detail`, `quality_reduce_hallucination` | Improve output quality |
-| Performance | `perf_reduce_iterations`, `perf_batch_tools`, `perf_cache` | Reduce API calls |
-| Memory | `memory_consolidation`, `memory_recall_prompt` | Optimize context usage |
-| Security | `security_user_approval`, `security_danger_cmd` | Safety guards |
-| Skill | `skill_learn_pattern`, `skill_activate_by_context` | Adaptive skill behavior |
-| Communication | `comm_retry_prompt`, `comm_alternate | Conversational adaptation |
+### Restarting MCP Server After Gene Changes
 
-### Root Cause of Zero Usage
+The MCP server loads `genes.json` once at startup and caches it. After writing a new `genes.json`:
+
+1. **Check the MCP server definition** `~/.hermes/config.yaml` — look for `simplemem_evolution` in `mcp.servers:` (typically cwd = `simplemem_evolution/`, args = `[simplemem_evolution_mcp.py]`)
+2. **Kill the subprocess** — the Hermes gateway auto-restarts stdio MCP servers. Killing the python subprocess causes the gateway to respawn it, loading the new config
+3. **Verify** → call `mcp_simplemem_evolution_gene_list` — should show the updated gene IDs
+4. **Verify matching** → call `mcp_simplemem_evolution_gene_match(context="session_end")` — should return the expected gene
+
+### Root Cause of Zero Gene Usage
 
 `run_agent.py` runtime **never calls `GeneStore.match()`** in its execution path. The gene matching logic exists in `gene_store.py` but there's no integration point:
 
@@ -520,7 +625,7 @@ This gap was partially closed by the MIPROv2 pipeline (it reads skills and write
 
 Genes were designed for a future integration that was never built. To activate them, you would need to add a gene matching call at one of these points in `run_agent.py`:
 - After `handle_function_call()` returns a tool error
-- Before sending the next LLM request in the conversation loop
+- Before sending the LLM request in the conversation loop
 - In `chat()` or `run_conversation()` as a context enrichment step
 
 ---
@@ -543,8 +648,7 @@ Legacy (5018-entry) category breakdown:
 ### Key Observations
 
 1. **Two write paths, one store** — Two independent processes (`simplemem_memory_bridge.py` and legacy `SessionEventLog`) write to the same DB with incompatible entry_id formats and different weight strategies. See `references/evolution-data-flow-topology.md`.
-2. **Stale decay** — Entries decay to weight 0.1 floor but are never pruned (no threshold-based deletion)
-2. **Stale decay** — Entries decay to weight 0.1 floor but are never pruned (no threshold-based deletion)
+2. **Stale decay** — Entries decay to weight 0.1 floor but are never pruned (no threshold-based deletion; DECAY_FACTOR=0.02 as of Phase C)
 3. **Identical events** — All 23 `evt_*` events have the same `signal_score: 0.985` and same signal types — indicates `evolver_analysis.py` (when it ran) analyzed the same snapshot repeatedly
 4. **Heavy tool_call bias** — 75% of all entries are tool-level; no higher-level behavior patterns are derived
 
@@ -628,12 +732,14 @@ tail -1 ~/.hermes/hermes-agent/hermes-agent-self-evolution/assets/gep/rtk_metric
 | Bridge script not found at `~/.hermes/scripts/` | Correct path is `~/.hermes/hermes_to_evolver_bridge.py` (repo root). Also NOT at `~/.hermes/hermes-agent/scripts/` as older docs claimed. |
 | Analysis script not found | `~/.hermes/evolver_analysis.py` **does not exist** — it was never committed to disk or was deleted. The cron pipeline cannot analyze sessions without it. |
 | **Step 1 bridge finds 0 sessions** | Column name mismatch: bridge queries `session_id, started_at, ended_at, summary` but `state.db` uses `id, start_time, end_time, end_reason`. Fix the SQL in `hermes_to_evolver_bridge.py`. |
+| **Step 2 script missing** | `evolver_analysis.py` was never committed. For Evolution Store persistence, use Path E (`evolver_to_simplemem.py`) or Path F (`bridge_finalize_and_decay` MCP tool) instead — see Step 3 section above. |
 | **Evolver API connectivity errors** | Set `OPENAI_API_BASE` and `OPENAI_API_KEY` before running — see Network section |
 | Sessions not syncing | Check `~/.openclaw/agents/hermes-agent/sessions/` — even after fixing the column names, verify that the bridge is writing `.json` files there |
 | **TLS timeouts on MacBook** | Use the ARK Volcengine endpoint documented above |
 | Config resets after `hermes config set` or install | Apply changes after SkillClaw runs, or run `restore_hermes_config.sh` |
 | **Evolution DB has 7300+ entries but nothing uses them** | Two write paths (bridge cron */30 + legacy runtime) both INSERT into `evolution.db` but nothing SELECTs for runtime behavior modification. See `references/evolution-data-flow-topology.md` for the full topology and write-path breakdown. To close the loop: add a consumer that reads evolution entries and adjusts runtime behavior (e.g., tool selection, retry strategy, skill priority). |
 | **Genes never fire** | `run_agent.py` doesn't call `GeneStore.match()`. Add a gene-matching call in the conversation loop or tool execution pipeline. |
+| **Gene changes not reflected via MCP** | The MCP server caches `genes.json` in memory at startup. Writing a new `genes.json` has no effect until the server process is killed (gateway auto-restarts it). Kill the `simplemem_evolution_mcp.py` subprocess, then verify with `gene_list` / `gene_match` MCP tools. |
 | **CMA-ES engine doesn't produce usable output** | ⚠️ **OUTDATED**: The CMA-ES engine has been replaced by the MIPROv2 pipeline. The MIPROv2 pipeline does deploy (writes to `~/.hermes/skills/`) but suffers from content collapse due to small eval datasets — see the Skill Evolution Pipeline section above. |
 | **Decay events stuck at weight=0.1** | Add a pruning threshold (e.g., delete entries that have been at floor for >30 days). The current scheduler decays to 0.1 then recurses infinitely. |
 | **All events.jsonl entries are identical** | `evolver_analysis.py` (when it ran) didn't track what it already processed. Any fix should include idempotency — track last-analyzed session ID and skip already-processed data. |
