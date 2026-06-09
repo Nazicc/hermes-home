@@ -527,6 +527,136 @@ size when no content-preservation metric exists. Mitigation:
 See `references/evolver-content-collapse-mitigation.md` for full root-cause analysis, configuration,
 and verification procedure.
 
+### Plugin Hook System & Injection Paths (15 Hooks)
+
+The plugin hook system in `hermes_cli/plugins.py` defines 15 valid hook points (line 128) that plugins can register callbacks on. For self-evolution, three hooks are primary injection paths:
+
+| Hook Name | Fires When | Self-Evolution Utility |
+|-----------|-----------|----------------------|
+| `post_tool_call` | After every tool execution | **Primary** — captures tool_name/args/result/exit_code in real time |
+| `pre_llm_call` | Before LLM invocation | Context injection (dynamic system prompt augmentation) |
+| `on_session_end` | Session terminates | Batch post-processing, closing summary, evolution checkpoints |
+
+**Other available hooks**: `pre_conversation`, `post_assistant_response`, `on_tick`, `on_session_idle`, `on_session_pause`, `on_session_resume`, `on_user_message`, `on_system_message`, `on_message`, `on_token`, `on_error`, `on_shutdown`.
+
+**Registration mechanism**: `plugins.register_hook(hook_name, callback_fn)` where `callback_fn` receives typed event data. Hook callbacks are invoked synchronously via `plugins.invoke_hook(hook_name, **kwargs)` — they must be fast and non-blocking.
+
+**Actual invocation chain** (`model_tools.py`):
+
+```
+model_tools._emit_terminal_post_tool_call()
+  → _emit_post_tool_call_hook()            # model_tools.py:812
+    → plugins.invoke_hook("post_tool_call", tool_name, args, result, exit_code, ...)
+```
+
+**How to build an evolution plugin**: A self-evolution plugin registers a `post_tool_call` callback that writes tool events to a daily-rotated NDJSON data lake at `~/.hermes/self-evolution/data-lake/YYYY-MM-DD.ndjson`. This is independent of the three internal layers and captures every tool event in real time for cross-session pattern analysis.
+
+### Tool Execution Pipeline
+
+When `AIAgent._run_tool_call()` executes a tool, the full pipeline is:
+
+```
+AIAgent._run_tool_call()
+  → model_tools.execute_tool_call()
+    → guardrail check (safety valve — blocks dangerous commands)
+    → checkpoint save (crash recovery snapshot)
+    → actual tool call (dispatch to terminal, MCP, or Python function)
+    → _emit_terminal_post_tool_call()
+      → _emit_post_tool_call_hook()
+        → plugins.invoke_hook("post_tool_call", ...)
+    → return ToolResult(name, args, result, exit_code, duration)
+  → tool_dispatch_helpers.make_tool_result_message(ToolResult)
+    → format for LLM consumption: truncate, wrap errors, inject metadata
+  → tool_result_storage.save_tool_result(session_id, ToolResult)
+    → three-layer defense (per-tool → per-result → turn-budget rotation)
+```
+
+**Three key files powering the pipeline:**
+
+| File | Path | Role |
+|------|------|------|
+| `tool_executor.py` | `agent/tool_executor.py` | Execution lifecycle: guardrail → checkpoint → dispatch → hook |
+| `tool_dispatch_helpers.py` | `agent/tool_dispatch_helpers.py` | Result formatting: `make_tool_result_message()` with truncation + error wrapping |
+| `tool_result_storage.py` | `tools/tool_result_storage.py` | NDJSON persistence: per-tool save → per-result aggregate → 100MB rotation |
+
+**tool_result_storage.py three-layer persistence:**
+
+1. **Per-tool**: Each ToolResult saved immediately to individual file
+2. **Per-result**: Aggregated result written at iteration boundary
+3. **Turn-budget rotation**: Rotation file limit (default 100MB) with automatic rotation
+
+Storage path: `~/.hermes/sessions/<session_id>/tool_results.ndjson`
+
+### Existing Standalone Bridge Pipeline
+
+Beyond the three internal layers and the DSPy Evolver, Hermes has a **standalone bridge pipeline** at `~/.hermes/` that predates the new data-lake approach:
+
+**Script pair:**
+
+| Script | Path | Role |
+|--------|------|------|
+| `hermes_to_evolver_bridge.py` | `~/.hermes/hermes_to_evolver_bridge.py` | Step 1: Read Honcho session store → extract tool events → write GEPA pipeline artifacts to `self-evolution/checkpoints/<skill_name>/` |
+| `evolver_analysis.py` | `~/.hermes/evolver_analysis.py` | Step 2: Analyze checkpoints for four evolution signals |
+
+**Four signals detected by evolver_analysis.py:**
+
+1. `errsig` — error signature (repeated failures in the same tool)
+2. `context_bloat` — context window overuse patterns
+3. `low_engagement` — user disengagement signals
+4. `skill_drift` — skill usage pattern shifts
+
+**Checkpoint directory layout:**
+
+```
+~/.hermes/self-evolution/
+└── checkpoints/
+    └── <skill-name>/
+        └── _pipeline_complete.json    # run metadata, cycle number, training data footprint
+```
+
+The bridge is batch-oriented (post-session analysis) and independent of the real-time hook-based approach — both can coexist.
+
+### Data-Lake Evolution Pipeline (Design)
+
+A new self-evolution pipeline designed June 2026 that uses real-time hook capture instead of batch bridge scripts:
+
+**Architecture:**
+
+```
+Real-Time Path:
+  post_tool_call hook → data-lake/YYYY-MM-DD.ndjson
+                           ↓ (daily analysis)
+                      stats.py → metrics dashboard
+                           ↓ (periodic)
+                      system prompt injection → closed-loop optimization
+
+Batch Path (existing):
+  hermes_to_evolver_bridge.py → checkpoints/ → evolver_analysis.py
+```
+
+**Data-lake schema** (per line NDJSON):
+
+```json
+{
+  "timestamp": "2026-06-10T04:00:00.000Z",
+  "session_id": "abc123",
+  "tool_name": "web_search",
+  "exit_code": 0,
+  "duration_ms": 2340,
+  "token_cost": 0.002,
+  "tool_category": "web",
+  "args_snippet": "query='...'",
+  "result_truncated": true
+}
+```
+
+**Advantages over the bridge pipeline:**
+- Real-time capture (no batch delay)
+- Lower overhead (no Honcho session store required)
+- Cross-session aggregation possible (daily-rotated files cover all sessions)
+- Enables live system-prompt optimization (inject stats as context)
+- Independent of the three internal layers (no code modification to core)
+
 ## Related Skills
 
 - `hermes-agent` — End-user CLI usage guide
