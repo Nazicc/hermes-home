@@ -13,15 +13,15 @@ SESSION_COMPRESSED=0
 BEFORE_SIZE="N/A"
 AFTER_SIZE="N/A"
 
-# ── Delete sessions older than 90 days ──
+# ── Delete sessions older than 15 days ──
 if [ -f ~/.hermes/state.db ]; then
     BEFORE_SIZE=$(ls -lh ~/.hermes/state.db | awk '{print $5}')
     SESSION_DELETED=$(sqlite3 ~/.hermes/state.db "
         DELETE FROM sessions
-        WHERE created_at < datetime('now', '-90 days');
+        WHERE started_at < CAST(strftime('%s', datetime('now', '-15 days')) AS REAL);
         SELECT changes();
     " 2>/dev/null || echo "0")
-    echo "  ✓ Deleted $SESSION_DELETED sessions older than 90 days"
+    echo "  ✓ Deleted $SESSION_DELETED sessions older than 15 days"
 else
     echo "  ⚠ state.db not found"
 fi
@@ -38,19 +38,19 @@ compressed = 0
 head, tail = 5, 5
 
 for f in files:
-    # Fast pre-filter: skip files too small to have >80 messages
+    # Fast pre-filter: skip files too small to have >30 messages
     try:
         size = os.path.getsize(f)
     except OSError:
         continue
-    if size < 200000:  # less than ~200KB can't have 80+ msgs
+    if size < 75000:  # less than ~75KB can't have 30+ msgs
         continue
     try:
         with open(f) as fp:
             d = json.load(fp)
         msgs = d.get('messages', [])
         count = len(msgs)
-        if count > 80:
+        if count > 30:
             d['messages'] = msgs[:head] + [
                 {'role': 'system', 'content': f'[CONTEXT COMPACTION] {count - head - tail} messages compressed. Original had {count} total messages.'}
             ] + msgs[-tail:]
@@ -65,7 +65,7 @@ for f in files:
 
 print(compressed)
 " 2>/dev/null || echo "0")
-    echo "  ✓ Compressed $SESSION_COMPRESSED bloated sessions (>80 messages)"
+    echo "  ✓ Compressed $SESSION_COMPRESSED bloated sessions (>30 messages)"
 fi
 
 # ── Vacuum DB after deletions ──
