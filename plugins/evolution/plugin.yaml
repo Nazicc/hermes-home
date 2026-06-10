@@ -1,0 +1,11 @@
+name: evolution
+version: 1.0.0
+description: >
+  实时数据湖插件。通过 post_tool_call 钩子捕获每次工具调用，
+  写入 NDJSON 格式的每日数据湖文件，支持实时指标聚合和
+  自我进化系统提示注入。与 GEP 桥接管道（事后 cron 分析）
+  互补，提供细粒度的实时工具调用追踪。
+author: self-evolution-system
+provides_hooks:
+  - post_tool_call
+requires_env: []

@@ -1,12 +1,12 @@
 {
   "start_date": "2026-06-02",
   "last_course": "Course 1",
-  "last_topic": "CIA三元组与攻击类型",
-  "completed_pct": 25,
-  "last_study_date": "2026-06-09",
-  "days_studied": 2,
+  "last_topic": "Module 2: Cybersecurity Threats",
+  "completed_pct": 75,
+  "last_study_date": "2026-06-10",
+  "days_studied": 3,
   "streak": 1,
-  "study_hours": 1.5,
+  "study_hours": 3.0,
   "current_week": 2,
-  "last_study_date_before": "2026-06-07"
+  "last_study_date_before": "2026-06-10"
 }

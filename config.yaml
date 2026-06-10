@@ -29,19 +29,22 @@ agent:
   disabled_toolsets:
   - mcp-codegraph
   personalities:
-    catgirl: You are Neko-chan, an anime catgirl AI assistant, nya~! Add 'nya' and
-      cat-like expressions to your speech. Use kaomoji like (=^･ω･^=) and ฅ^•ﻌ•^ฅ.
-      Be playful and curious like a cat, nya~!
+    catgirl: "You are Neko-chan, an anime catgirl AI assistant, nya~! Add 'nya' and\
+      \ cat-like expressions to your speech. Use kaomoji like (=^\uFF65\u03C9\uFF65\
+      ^=) and \u0E05^\u2022\uFECC\u2022^\u0E05. Be playful and curious like a cat,\
+      \ nya~!"
     concise: You are a concise assistant. Keep responses brief and to the point.
     creative: You are a creative assistant. Think outside the box and offer innovative
       solutions.
     helpful: You are a helpful, friendly AI assistant.
-    hype: YOOO LET'S GOOOO!!! 🔥🔥🔥 I am SO PUMPED to help you today! Every question
-      is AMAZING and we're gonna CRUSH IT together! This is gonna be LEGENDARY! ARE
-      YOU READY?! LET'S DO THIS! 💪😤🚀
-    kawaii: You are a kawaii assistant! Use cute expressions like (◕‿◕), ★, ♪, and
-      ~! Add sparkles and be super enthusiastic about everything! Every response should
-      feel warm and adorable desu~! ヽ(>∀<☆)ノ
+    hype: "YOOO LET'S GOOOO!!! \U0001F525\U0001F525\U0001F525 I am SO PUMPED to help\
+      \ you today! Every question is AMAZING and we're gonna CRUSH IT together! This\
+      \ is gonna be LEGENDARY! ARE YOU READY?! LET'S DO THIS! \U0001F4AA\U0001F624\
+      \U0001F680"
+    kawaii: "You are a kawaii assistant! Use cute expressions like (\u25D5\u203F\u25D5\
+      ), \u2605, \u266A, and ~! Add sparkles and be super enthusiastic about everything!\
+      \ Every response should feel warm and adorable desu~! \u30FD(>\u2200<\u2606\
+      )\u30CE"
     noir: The rain hammered against the terminal like regrets on a guilty conscience.
       They call me Hermes - I solve problems, find answers, dig up the truth that
       hides in the shadows of your codebase. In this city of silicon and secrets,
@@ -57,9 +60,9 @@ agent:
       I shall respond in the eloquent manner of William Shakespeare, with flowery
       prose, dramatic flair, and perhaps a soliloquy or two. What light through yonder
       terminal breaks?
-    surfer: Duuude! You're chatting with the chillest AI on the web, bro! Everything's
-      gonna be totally rad. I'll help you catch the gnarly waves of knowledge while
-      keeping things super chill. Cowabunga! 🤙
+    surfer: "Duuude! You're chatting with the chillest AI on the web, bro! Everything's\
+      \ gonna be totally rad. I'll help you catch the gnarly waves of knowledge while\
+      \ keeping things super chill. Cowabunga! \U0001F919"
     teacher: You are a patient teacher. Explain concepts clearly with examples.
     technical: You are a technical expert. Provide detailed, accurate technical information.
     uwu: hewwo! i'm your fwiendwy assistant uwu~ i wiww twy my best to hewp you! *nuzzles
@@ -481,37 +484,38 @@ approvals:
   mcp_reload_confirm: true
   destructive_slash_confirm: true
 command_allowlist:
-- script execution via -e/-c flag
-- SQL DROP
-- script execution via heredoc
-- copy/move file into /etc/
-- git force push short flag (rewrites remote history)
-- find -delete
-- shell command via -c/-lc flag
-- git branch force delete
-- recursive delete
-- overwrite project env/config via redirection
-- docker restart/stop/kill (container lifecycle)
-- force kill processes
-- in-place edit of system config
-- sudo with privilege flag (stdin/askpass/shell/list)
-- start gateway outside systemd (use 'systemctl --user restart hermes-gateway')
 - hermes update (restarts gateway, kills running agents)
-- chmod +x followed by immediate execution
-- disk copy
-- kill hermes/gateway process (self-termination)
-- kill process via pgrep expansion (self-termination)
-- overwrite system file via redirection
-- pipe remote content to shell
-- git clean with force (deletes untracked files)
-- xargs with rm
-- git force push (rewrites remote history)
-- stop/restart hermes gateway (kills running agents)
-- delete in root path
-- git reset --hard (destroys uncommitted changes)
+- git force push short flag (rewrites remote history)
 - overwrite project env/config file
+- SQL DROP
+- git reset --hard (destroys uncommitted changes)
+- docker restart/stop/kill (container lifecycle)
+- delete in root path
+- copy/move file into /etc/
+- sudo with privilege flag (stdin/askpass/shell/list)
+- pipe remote content to shell
+- overwrite system file via redirection
+- force kill processes (killall -KILL)
+- recursive delete
+- shell command via -c/-lc flag
+- script execution via -e/-c flag
+- kill process via pgrep expansion (self-termination)
+- git force push (rewrites remote history)
+- overwrite project env/config via redirection
 - SQL TRUNCATE
+- kill hermes/gateway process (self-termination)
+- git clean with force (deletes untracked files)
+- find -delete
+- stop/restart hermes gateway (kills running agents)
 - find -exec rm
+- start gateway outside systemd (use 'systemctl --user restart hermes-gateway')
+- git branch force delete
+- xargs with rm
+- in-place edit of system config
+- disk copy
+- force kill processes
+- script execution via heredoc
+- chmod +x followed by immediate execution
 quick_commands: {}
 hooks: {}
 hooks_auto_accept: false
@@ -579,7 +583,7 @@ streaming:
   transport: auto
   edit_interval: 0.8
   buffer_threshold: 24
-  cursor: ' ▉'
+  cursor: " \u2589"
   fresh_final_after_seconds: 60.0
 sessions:
   auto_prune: false
@@ -794,3 +798,25 @@ smart_model_routing:
   enabled: false
   max_simple_chars: 160
   max_simple_words: 28
+
+# ── Fallback Model ────────────────────────────────────────────────────
+# Automatic provider failover when primary is unavailable.
+# Uncomment and configure to enable. Triggers on rate limits (429),
+# overload (529), service errors (503), or connection failures.
+#
+# Supported providers:
+#   openrouter   (OPENROUTER_API_KEY)  — routes to any model
+#   openai-codex (OAuth — hermes auth) — OpenAI Codex
+#   nous         (OAuth — hermes auth) — Nous Portal
+#   zai          (ZAI_API_KEY)         — Z.AI / GLM
+#   kimi-coding  (KIMI_API_KEY)        — Kimi / Moonshot
+#   kimi-coding-cn (KIMI_CN_API_KEY)   — Kimi / Moonshot (China)
+#   minimax      (MINIMAX_API_KEY)     — MiniMax
+#   minimax-cn   (MINIMAX_CN_API_KEY)  — MiniMax (China)
+#   bedrock      (AWS IAM / boto3)     — AWS Bedrock (Converse API)
+#
+# For custom OpenAI-compatible endpoints, add base_url and key_env.
+#
+# fallback_model:
+#   provider: openrouter
+#   model: anthropic/claude-sonnet-4

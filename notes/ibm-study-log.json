@@ -8,6 +8,15 @@
       "hours": 1.5,
       "note": "完成CIA、常见攻击类型、安全控制框架概述",
       "pct": 25
+    },
+    {
+      "date": "2026-06-10",
+      "time": "2026-06-10 21:54",
+      "course": "Course 1",
+      "topic": "Module 2: Cybersecurity Threats",
+      "hours": 1.5,
+      "note": "完整学习 Module 2：威胁主体与动机(APT/内部威胁/有组织犯罪)、恶意软件(病毒/Worm/特洛伊/Ransomware/Rootkit/Fileless)、社会工程学(Phishing/鱼叉/Vishing/Tailgating)、网络攻击(DoS/MitM/DNS中毒)、Web攻击(SQL注入/XSS/CSRF)、攻击框架(Cyber Kill Chain/MITRE ATT&CK/Diamond Model)",
+      "pct": 50
     }
   ]
 }
