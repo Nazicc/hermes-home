@@ -1,0 +1,13 @@
+# Patched overlay — thin layer on top of base v3 image
+# Separates "the application" from "deployment-specific adaptations"
+FROM honcho-api:base
+
+# Inject startup patch script (embedding dims, GLM compat, JSON prompt)
+# The docker-compose.yml command already runs it before starting:
+#   python3 /app/honcho-patch.py && fastapi run ...
+COPY honcho-patch.py /app/honcho-patch.py
+
+# Ensure non-root user can execute it
+USER root
+RUN chown app:app /app/honcho-patch.py
+USER app

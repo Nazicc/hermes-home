@@ -9,7 +9,7 @@
     <array>
         <string>/bin/bash</string>
         <string>-c</string>
-        <string>exec $HOME/.hermes/scripts/honcho-ensure.sh</string>
+        <string>exec $HOME/.hermes/scripts/ensure-memory-stack.sh</string>
     </array>
 
     <!-- 登录时立即执行一次 -->
