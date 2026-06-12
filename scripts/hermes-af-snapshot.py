@@ -24,8 +24,9 @@ HERMES_DIR = Path.home() / ".hermes" / "hermes-agent"
 VENV_PYTHON = HERMES_DIR / "venv" / "bin" / "python3"
 SNAPSHOT_DIR = HERMES_DIR / "agent-snapshots"
 
-# Ensure SNAPSHOT_DIR exists
+# Ensure SNAPSHOT_DIR exists with restricted permissions
 SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+SNAPSHOT_DIR.chmod(0o700)
 
 # Run export via hermes_af module
 os.chdir(str(HERMES_DIR))
@@ -74,6 +75,8 @@ elif snapshot_file.stat().st_size == 0:
 else:
     size_mb = snapshot_file.stat().st_size / (1024 * 1024)
     print(f"  ✅ File exists: {snapshot_file.name} ({size_mb:.1f} MB)")
+    # Restrict permissions to owner-only (contains plaintext API keys in env vars)
+    snapshot_file.chmod(0o600)
 
 # (2) Validate with hermes_af validate
 validate_result = subprocess.run(
@@ -126,9 +129,9 @@ if len(prev_snapshots) >= 2:
         else:
             print(f"  ✅ Tool count stable at {tool_count}")
 
-# Cleanup: keep only the 7 most recent snapshots
+# Cleanup: keep only the 5 most recent snapshots (reduce exposure window for sensitive data)
 all_snapshots = sorted(SNAPSHOT_DIR.glob("*.af"), key=os.path.getmtime, reverse=True)
-for old in all_snapshots[7:]:
+for old in all_snapshots[5:]:
     old.unlink()
     print(f"  🗑️  Removed old snapshot: {old.name}")
 
