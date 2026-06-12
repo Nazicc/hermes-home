@@ -296,7 +296,9 @@ write_file("/path/to/file", "new content")
     can fail with `0 collected` and `SyntaxError` / `NameError` / `ImportError` the next — **only after the cache
     is invalidated**. The stale cache makes the bugs invisible.
 
-12. **namespace-package-empty-directory** — `python3 -m <package>` fails with *"'<package>' is a package and cannot be directly executed"*. The module directory exists but contains **no Python files** at all (no `__init__.py`, `__main__.py`, or implementation files). Python treats it as a namespace package — a valid importable name with zero code — but can't execute it. The fix is to restore the files from git history rather than creating stubs. See `references/namespace-package-empty-directory.md` for the full diagnosis and recovery recipe.
+12. **powershell-syntax-in-system-profile** — Bash/zsh reports `:VAR=value: command not found` on startup. Root cause: system profile files (`/etc/profile`, `~/.zshrc`) contain PowerShell `$env:` syntax instead of bash `export`. Replace `$env:FOO="bar"` with `export FOO=bar`. See `references/bash-startup-powershell-syntax.md` for diagnosis, fix, and verification.
+
+13. **namespace-package-empty-directory** — `python3 -m <package>` fails with *"'<package>' is a package and cannot be directly executed"*. The module directory exists but contains **no Python files** at all (no `__init__.py`, `__main__.py`, or implementation files). Python treats it as a namespace package — a valid importable name with zero code — but can't execute it. The fix is to restore the files from git history rather than creating stubs. See `references/namespace-package-empty-directory.md` for the full diagnosis and recovery recipe.
 
     **How to detect:**
     - pytest shows `0 collected` with import/syntax errors you didn't see before
@@ -369,6 +371,7 @@ write_file("/path/to/file", "new content")
 - **context-engineering** (skills/context-engineering/SKILL.md) — When debugging reveals context pollution, reset and re-observe.
 - **hermes-agent-diagnostics** (skills/hermes-agent-diagnostics/SKILL.md) — For Hermes system-level issues, start here first.
 - **deerflow-commander** (skills/deerflow-commander/SKILL.md) — Delegate deep research on unfamiliar technologies during debugging.
+- **PowerShell syntax in system profile** (`references/bash-startup-powershell-syntax.md`) — When bash/zsh reports `:VAR:value: command not found` on startup, check system profile files for `$env:` PowerShell syntax contamination. Diagnosis, fix, and verification steps.
 - **Dict type aliases** (`references/python-dict-type-aliases.md`) — Python `dict[str, Any]` alias gotcha: attribute access vs subscript access, diagnosis, and bulk-fix workflow for test code.
 - **Fixture-model contract repair** (`references/fixture-model-contract-repair.md`) — When test fixtures fail because model APIs changed: read constructors, categorize mismatches (imports / field names / enum values / constructor args), fix bottom-up, validate each layer.
 - **pytest collection failure rootdir** (`references/pytest-collection-failure-rootdir.md`) — pytest 9.0.2 CLI `-c /dev/null` breaks rootdir detection → silent "No tests collected" (exit 4). Diagnosis checklist, root cause analysis, and fix approaches.
