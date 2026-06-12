@@ -506,7 +506,10 @@ DEFAULT_ARCHIVE_AFTER_DAYS = 90     # stale → archive after 90 days
 
 ### Known Gaps
 
-- `self-improvement-loop.md` reference doc is referenced in `background_review.py` docstring but missing on disk
+- `self-improvement-loop.md` reference doc is referenced in `background_review.py` docstring but **MISSING ON DISK** — the linked_files table below claims it exists (forward reference from earlier design phase), but a file-system search confirmed it was never written.
+- **evolution.db has 10,300+ entries but zero semantic knowledge** — all entries are raw tool-call descriptions (`"Tool call: web_search {query: '...'}"`). The EvolutionStore in `simplemem_evolution/forgetting.py` is ready to accept knowledge (upsert/decay/prune all work) but no enrichment pipeline feeds it.
+- **evolution-recorder plugin directory is empty** — `hermes-agent/plugins/evolution-recorder/` exists but contains zero files. Confirmed gap between data capture and knowledge synthesis.
+- **VALID_HOOKS count discrepancy** — The `plugins.py` VALID_HOOKS set is reported as 15 hooks in this document. A live code inspection found 21 hooks in the same file (line 128). The exact count should be verified on the actual source before relying on either number.
 - No cross-session pattern mining — background review only evaluates current turn
 - No curator ↔ background_review coordination (could modify same skill concurrently)
 - No metrics tracking self-evolution effectiveness (improvement rate vs "nothing to save" frequency)
@@ -527,9 +530,9 @@ size when no content-preservation metric exists. Mitigation:
 See `references/evolver-content-collapse-mitigation.md` for full root-cause analysis, configuration,
 and verification procedure.
 
-### Plugin Hook System & Injection Paths (15 Hooks)
+### Plugin Hook System & Injection Paths (15–21 Hooks)
 
-The plugin hook system in `hermes_cli/plugins.py` defines 15 valid hook points (line 128) that plugins can register callbacks on. For self-evolution, three hooks are primary injection paths:
+The plugin hook system in `hermes_cli/plugins.py` defines valid hook points (line 128) that plugins can register callbacks on. **⚠️ Count discrepancy noted**: this document lists 15 hooks based on earlier analysis; a live code inspection found 21 hooks in the `VALID_HOOKS` set. Verify the actual source before relying on either number. For self-evolution, three hooks are primary injection paths:
 
 | Hook Name | Fires When | Self-Evolution Utility |
 |-----------|-----------|----------------------|
@@ -674,5 +677,8 @@ The skill stores reference documents in its `references/` directory:
 | File | Content |
 |------|---------|
 | `references/self-evolution-architecture-deep-analysis.md` | Full deep analysis of the three-layer system: prompt details, fork inheritance strategy, safety mechanisms, CMA comparison, and identified gaps |
-| `references/self-improvement-loop.md` | Design doc referenced by `agent/background_review.py` docstring — covers philosophy, implementation architecture, trigger conditions, and known future directions |
+| `references/self-improvement-loop.md` | **⚠️ MISSING ON DISK** — referenced by `agent/background_review.py` docstring but never actually created. Would cover philosophy, implementation architecture, trigger conditions, and known future directions. |
 | `references/evolver-content-collapse-mitigation.md` | Root cause analysis and mitigation for DSPy MIPROv2 content collapse (7-13% body size degeneration), including fidelity metrics and triple-gate deploy |
+| `references/hook-plugin-implementation-guide.md` | Comprehensive guide for creating hook-based plugins: evolution data-lake design, plugin lifecycle, verification patterns |
+| `references/refactored-pipeline-hook-mapping.md` | Detailed mapping of the three-layer evolution pipeline, hook injection paths, and the standalone bridge pipeline architecture |
+| `references/evolution-db-schema-discovery.md` | EvolutionStore DB schema (evolution_entries table), EvolutionEntry Pydantic model, three-path analysis (cron bridge ✅ / plugin ❌ / simplemem ⚠️), and data quality findings (10K+ tool-call-only entries with zero semantic knowledge) |
